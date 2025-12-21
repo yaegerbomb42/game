@@ -53,22 +53,36 @@ const Lobby = () => {
         // Update player list - handled by game-state-update
       } else if (event.type === 'game-started') {
         // Navigate to game with socket
+        console.log('Game started event received, roomState:', roomState, 'socket:', !!socket)
         if (roomState && socket) {
           console.log('Navigating to game:', roomState.roomId)
           navigate(`/game/${roomState.roomId}`, { 
             state: { socket: socket, playerName: localStorage.getItem('playerName') } 
           })
+        } else {
+          console.warn('Cannot navigate to game - missing roomState or socket')
         }
       }
     })
 
     newSocket.on('game-state-update', (gameState) => {
       if (roomState) {
+        const wasWaiting = roomState.gamePhase === 'waiting'
+        const isNowStarted = gameState.gamePhase !== 'waiting'
+        
         setRoomState({
           ...roomState,
           players: Object.values(gameState.players),
           gamePhase: gameState.gamePhase
         })
+        
+        // Navigate to game if phase changed from waiting to started
+        if (wasWaiting && isNowStarted && socket) {
+          console.log('Game phase changed from waiting to', gameState.gamePhase, '- navigating to game')
+          navigate(`/game/${roomState.roomId}`, { 
+            state: { socket: socket, playerName: localStorage.getItem('playerName') } 
+          })
+        }
       }
     })
 
