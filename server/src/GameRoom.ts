@@ -616,4 +616,12 @@ export class GameRoom extends EventEmitter {
   hasPlayer(playerId: string): boolean {
     return this.players.has(playerId);
   }
+
+  getPlayer(playerId: string): Player | undefined {
+    return this.players.get(playerId);
+  }
+
+  getRoomId(): string {
+    return this.roomId;
+  }
 }

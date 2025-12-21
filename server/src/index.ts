@@ -100,6 +100,21 @@ io.on('connection', (socket) => {
     console.log(`Player ${playerName} joined room ${targetRoomId}`);
   });
 
+  // Handle get game state request
+  socket.on('get-game-state', () => {
+    const room = findPlayerRoom(socket.id);
+    if (room) {
+      const player = room.getPlayer(socket.id);
+      if (player) {
+        socket.emit('joined-room', {
+          roomId: room.getRoomId(),
+          player,
+          gameState: room.getSerializableGameState(),
+        });
+      }
+    }
+  });
+
   // Handle player actions
   socket.on('player-action', (action) => {
     const room = findPlayerRoom(socket.id);
