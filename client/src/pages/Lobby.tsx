@@ -52,10 +52,12 @@ const Lobby = () => {
       if (event.type === 'player-joined' || event.type === 'player-left') {
         // Update player list - handled by game-state-update
       } else if (event.type === 'game-started') {
-        // Navigate to game
-        if (roomState) {
+        // Navigate to game with socket
+        if (roomState && socket) {
           console.log('Navigating to game:', roomState.roomId)
-          navigate(`/game/${roomState.roomId}`)
+          navigate(`/game/${roomState.roomId}`, { 
+            state: { socket: socket, playerName: localStorage.getItem('playerName') } 
+          })
         }
       }
     })
@@ -70,15 +72,22 @@ const Lobby = () => {
       }
     })
 
-    newSocket.on('disconnect', () => {
-      console.log('Disconnected from server')
+    newSocket.on('disconnect', (reason) => {
+      console.log('Disconnected from server:', reason)
       setRoomState(null)
+      setIsConnecting(false)
+    })
+
+    newSocket.on('connect_error', (error) => {
+      console.error('Connection error:', error)
+      setError('Failed to connect to server')
+      setIsConnecting(false)
     })
 
     return () => {
       newSocket.close()
     }
-  }, [navigate, roomState])
+  }, [navigate])
 
   const handleCreateRoom = () => {
     if (!playerName.trim()) {

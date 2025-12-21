@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { io, Socket } from 'socket.io-client'
 import { GameScene } from '../game/GameScene'
 import * as Phaser from 'phaser'
@@ -38,6 +38,7 @@ interface GameOverData {
 const Game = () => {
   const { roomId } = useParams<{ roomId: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
   const gameRef = useRef<Phaser.Game | null>(null)
   const socketRef = useRef<Socket | null>(null)
   const [gameState, setGameState] = useState<GameState | null>(null)
@@ -51,16 +52,21 @@ const Game = () => {
       return
     }
 
-    // Initialize socket connection
-    const socket = io(import.meta.env.VITE_SERVER_URL || 'http://localhost:3001')
+    // Use existing socket from navigation state or create new one
+    const existingSocket = location.state?.socket
+    const socket = existingSocket || io(import.meta.env.VITE_SERVER_URL || 'http://localhost:3001')
     socketRef.current = socket
 
-    socket.on('connect', () => {
-      console.log('Connected to game server')
-      // Try to rejoin the room (in case of reconnection)
-      const playerName = localStorage.getItem('playerName') || 'Player'
-      socket.emit('join-room', { roomId, playerName })
-    })
+    if (!existingSocket) {
+      socket.on('connect', () => {
+        console.log('Connected to game server')
+        // Try to rejoin the room (in case of reconnection)
+        const playerName = localStorage.getItem('playerName') || 'Player'
+        socket.emit('join-room', { roomId, playerName })
+      })
+    } else {
+      console.log('Using existing socket connection for game')
+    }
 
     socket.on('joined-room', (data) => {
       console.log('Rejoined room:', data)
@@ -90,7 +96,10 @@ const Game = () => {
     })
 
     return () => {
-      socket.close()
+      // Only close socket if we created it (not passed from lobby)
+      if (!existingSocket) {
+        socket.close()
+      }
     }
   }, [roomId, navigate])
 
