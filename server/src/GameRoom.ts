@@ -1,7 +1,7 @@
 import { EventEmitter } from 'events';
 import { Server, Socket } from 'socket.io';
 import { v4 as uuidv4 } from 'uuid';
-import { Player, Nexus, GameState, PlayerAction, GameEvent } from './types';
+import { Player, Nexus, GameState, PlayerAction, GameEvent, PowerUp } from './types';
 
 export class GameRoom extends EventEmitter {
   private roomId: string;
@@ -9,11 +9,13 @@ export class GameRoom extends EventEmitter {
   private players = new Map<string, Player>();
   private sockets = new Map<string, Socket>();
   private nexuses: Nexus[] = [];
+  private powerUps: PowerUp[] = [];
   private gamePhase: GameState['gamePhase'] = 'waiting';
   private phaseStartTime = Date.now();
   private gameStartTime = 0;
   private winner: string | null = null;
   private gameLoop: NodeJS.Timeout | null = null;
+  private powerUpSpawnTimer: NodeJS.Timeout | null = null;
 
   constructor(roomId: string, io: Server) {
     super();
@@ -111,6 +113,12 @@ export class GameRoom extends EventEmitter {
       case 'defend':
         this.handleDefend(player, action);
         break;
+      case 'collect-powerup':
+        this.handleCollectPowerUp(player, action);
+        break;
+      case 'use-ability':
+        this.handleUseAbility(player, action);
+        break;
     }
 
     this.broadcastGameState();
@@ -168,16 +176,39 @@ export class GameRoom extends EventEmitter {
   }
 
   private handleAttack(player: Player, action: PlayerAction) {
+    const now = Date.now();
+    
+    // Check attack cooldown
+    if (now - player.lastAttack < player.attackCooldown) return;
+    
     const targetPlayer = this.players.get(action.data.targetId || '');
-    if (!targetPlayer) return;
+    if (!targetPlayer || !targetPlayer.isAlive) return;
 
+    // Check attack range
     const distance = Math.sqrt((player.x - targetPlayer.x) ** 2 + (player.y - targetPlayer.y) ** 2);
-    if (distance > 60) return;
+    if (distance > player.attackRange) return;
 
-    // Transfer energy from target to attacker
-    const stealAmount = Math.min(10, targetPlayer.energy);
-    targetPlayer.energy -= stealAmount;
-    player.energy += stealAmount * 0.7; // Attacker gets 70% of stolen energy
+    // Apply damage
+    const damage = player.attackPower;
+    targetPlayer.health -= damage;
+    player.lastAttack = now;
+
+    // Broadcast attack event
+    this.broadcastEvent({
+      type: 'player-attacked',
+      data: {
+        attackerId: player.id,
+        targetId: targetPlayer.id,
+        damage,
+        targetHealth: targetPlayer.health,
+      },
+      timestamp: now,
+    });
+
+    // Check if target is killed
+    if (targetPlayer.health <= 0) {
+      this.handlePlayerKilled(player, targetPlayer);
+    }
   }
 
   private handleDefend(player: Player, action: PlayerAction) {
@@ -185,6 +216,116 @@ export class GameRoom extends EventEmitter {
     
     player.energy -= 10;
     // Defensive boost logic would go here
+  }
+
+  private handlePlayerKilled(attacker: Player, victim: Player) {
+    // Update stats
+    attacker.kills++;
+    attacker.score += 100; // Base kill score
+    victim.deaths++;
+    victim.isAlive = false;
+    victim.health = 0;
+
+    // Broadcast kill event
+    this.broadcastEvent({
+      type: 'player-killed',
+      data: {
+        killerId: attacker.id,
+        killerName: attacker.name,
+        victimId: victim.id,
+        victimName: victim.name,
+      },
+      timestamp: Date.now(),
+    });
+
+    // Respawn victim after 3 seconds
+    setTimeout(() => {
+      this.respawnPlayer(victim);
+    }, 3000);
+  }
+
+  private respawnPlayer(player: Player) {
+    if (!this.players.has(player.id)) return; // Player left the game
+    
+    player.isAlive = true;
+    player.health = player.maxHealth;
+    player.x = Math.random() * 800;
+    player.y = Math.random() * 600;
+    player.activePowerUps = []; // Clear power-ups on respawn
+    
+    this.broadcastGameState();
+  }
+
+  private handleCollectPowerUp(player: Player, action: PlayerAction) {
+    const powerUpId = action.data.powerUpId;
+    const powerUpIndex = this.powerUps.findIndex(p => p.id === powerUpId && !p.collected);
+    
+    if (powerUpIndex === -1) return;
+    
+    const powerUp = this.powerUps[powerUpIndex];
+    const distance = Math.sqrt((player.x - powerUp.x) ** 2 + (player.y - powerUp.y) ** 2);
+    
+    if (distance > 30) return; // Must be close to collect
+    
+    // Mark as collected and add to player
+    powerUp.collected = true;
+    powerUp.expiresAt = Date.now() + powerUp.duration;
+    player.activePowerUps.push(powerUp);
+    
+    // Apply power-up effect
+    this.applyPowerUpEffect(player, powerUp);
+    
+    // Remove from world
+    this.powerUps.splice(powerUpIndex, 1);
+    
+    // Broadcast collection event
+    this.broadcastEvent({
+      type: 'powerup-collected',
+      data: {
+        playerId: player.id,
+        powerUpType: powerUp.type,
+        effect: powerUp.effect,
+      },
+      timestamp: Date.now(),
+    });
+  }
+
+  private applyPowerUpEffect(player: Player, powerUp: PowerUp) {
+    switch (powerUp.type) {
+      case 'speed':
+        player.speed += powerUp.effect;
+        break;
+      case 'damage':
+        player.attackPower += powerUp.effect;
+        break;
+      case 'health':
+        player.health = Math.min(player.maxHealth, player.health + powerUp.effect);
+        break;
+      case 'shield':
+        // Shield effect would be handled in damage calculation
+        break;
+      case 'energy':
+        player.energy += powerUp.effect;
+        break;
+    }
+  }
+
+  private handleUseAbility(player: Player, action: PlayerAction) {
+    // Placeholder for special abilities
+    // This would be expanded with specific ability implementations
+    const abilityType = action.data.abilityType;
+    
+    switch (abilityType) {
+      case 'dash':
+        // Implement dash ability
+        break;
+      case 'heal':
+        // Implement heal ability
+        break;
+      case 'shield':
+        // Implement shield ability
+        break;
+    }
   }
 
   private startGame() {
@@ -202,8 +343,13 @@ export class GameRoom extends EventEmitter {
     this.gameLoop = setInterval(() => {
       this.updateGamePhase();
       this.updateNexuses();
+      this.updatePowerUps();
+      this.updatePlayerEffects();
       this.broadcastGameState();
     }, 1000); // Update every second
+
+    // Start power-up spawning
+    this.startPowerUpSpawning();
   }
 
   private updateGamePhase() {
@@ -311,6 +457,107 @@ export class GameRoom extends EventEmitter {
       clearInterval(this.gameLoop);
       this.gameLoop = null;
     }
+
+    if (this.powerUpSpawnTimer) {
+      clearInterval(this.powerUpSpawnTimer);
+      this.powerUpSpawnTimer = null;
+    }
+  }
+
+  private startPowerUpSpawning() {
+    // Spawn a power-up every 15-30 seconds
+    this.powerUpSpawnTimer = setInterval(() => {
+      this.spawnPowerUp();
+    }, 15000 + Math.random() * 15000);
+  }
+
+  private spawnPowerUp() {
+    // Don't spawn too many power-ups
+    if (this.powerUps.length >= 5) return;
+
+    const powerUpTypes: PowerUp['type'][] = ['speed', 'shield', 'damage', 'health', 'energy'];
+    const type = powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)];
+    
+    const powerUp: PowerUp = {
+      id: uuidv4(),
+      type,
+      x: Math.random() * 800,
+      y: Math.random() * 600,
+      duration: this.getPowerUpDuration(type),
+      effect: this.getPowerUpEffect(type),
+      expiresAt: 0, // Set when collected
+      collected: false,
+    };
+
+    this.powerUps.push(powerUp);
+
+    this.broadcastEvent({
+      type: 'powerup-spawned',
+      data: { powerUp },
+      timestamp: Date.now(),
+    });
+  }
+
+  private getPowerUpDuration(type: PowerUp['type']): number {
+    switch (type) {
+      case 'speed': return 10000; // 10 seconds
+      case 'shield': return 8000;  // 8 seconds
+      case 'damage': return 12000; // 12 seconds
+      case 'health': return 0;     // Instant
+      case 'energy': return 0;     // Instant
+      default: return 5000;
+    }
+  }
+
+  private getPowerUpEffect(type: PowerUp['type']): number {
+    switch (type) {
+      case 'speed': return 50;   // +50 speed
+      case 'shield': return 50;  // 50% damage reduction
+      case 'damage': return 15;  // +15 attack power
+      case 'health': return 50;  // +50 health
+      case 'energy': return 30;  // +30 energy
+      default: return 10;
+    }
+  }
+
+  private updatePowerUps() {
+    // Remove power-ups that have been in the world too long (60 seconds)
+    const now = Date.now();
+    this.powerUps = this.powerUps.filter(powerUp => {
+      if (powerUp.collected) return false;
+      // Remove if it's been in the world for more than 60 seconds
+      return (now - (powerUp.expiresAt || 0)) < 60000;
+    });
+  }
+
+  private updatePlayerEffects() {
+    const now = Date.now();
+    
+    for (const player of this.players.values()) {
+      // Remove expired power-ups
+      const expiredPowerUps = player.activePowerUps.filter(p => now > p.expiresAt);
+      
+      // Reverse power-up effects
+      for (const powerUp of expiredPowerUps) {
+        this.removePowerUpEffect(player, powerUp);
+      }
+      
+      // Keep only non-expired power-ups
+      player.activePowerUps = player.activePowerUps.filter(p => now <= p.expiresAt);
+    }
+  }
+
+  private removePowerUpEffect(player: Player, powerUp: PowerUp) {
+    switch (powerUp.type) {
+      case 'speed':
+        player.speed = Math.max(150, player.speed - powerUp.effect); // Don't go below base speed
+        break;
+      case 'damage':
+        player.attackPower = Math.max(25, player.attackPower - powerUp.effect); // Don't go below base damage
+        break;
+      // Health and energy are instant effects, no need to reverse
+      // Shield effect would be handled in damage calculation
+    }
   }
 
   private broadcastEvent(event: GameEvent) {
@@ -337,11 +584,25 @@ export class GameRoom extends EventEmitter {
     return {
       players: Object.fromEntries(this.players),
       nexuses: this.nexuses,
+      powerUps: this.powerUps,
       gamePhase: this.gamePhase,
       phaseStartTime: this.phaseStartTime,
       gameStartTime: this.gameStartTime,
       winner: this.winner,
+      leaderboard: this.generateLeaderboard(),
     };
+  }
+
+  private generateLeaderboard() {
+    return Array.from(this.players.values())
+      .sort((a, b) => b.score - a.score)
+      .map(player => ({
+        playerId: player.id,
+        playerName: player.name,
+        score: player.score,
+        kills: player.kills,
+        deaths: player.deaths,
+      }));
   }
 
   getPlayerCount(): number {
