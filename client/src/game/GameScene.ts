@@ -10,6 +10,15 @@ interface Player {
   influence: number
   color: string
   isAlive: boolean
+  health: number
+  maxHealth: number
+  attackPower: number
+  attackRange: number
+  kills: number
+  deaths: number
+  score: number
+  activePowerUps: any[]
+  speed: number
 }
 
 interface Nexus {
@@ -21,10 +30,28 @@ interface Nexus {
   chargeLevel: number
 }
 
+interface PowerUp {
+  id: string
+  type: 'speed' | 'shield' | 'damage' | 'health' | 'energy'
+  x: number
+  y: number
+  duration: number
+  effect: number
+  collected: boolean
+}
+
 interface GameState {
   players: Map<string, Player>
   nexuses: Nexus[]
+  powerUps: PowerUp[]
   gamePhase: string
+  leaderboard: Array<{
+    playerId: string
+    playerName: string
+    score: number
+    kills: number
+    deaths: number
+  }>
 }
 
 export class GameScene extends Phaser.Scene {
@@ -34,9 +61,12 @@ export class GameScene extends Phaser.Scene {
   
   // Game objects
   private playerSprites = new Map<string, Phaser.GameObjects.Sprite>()
+  private playerHealthBars = new Map<string, Phaser.GameObjects.Container>()
   private nexusSprites = new Map<string, Phaser.GameObjects.Container>()
+  private powerUpSprites = new Map<string, Phaser.GameObjects.Sprite>()
   private influenceGraphics!: Phaser.GameObjects.Graphics
   private particleManager!: Phaser.GameObjects.Particles.ParticleEmitterManager
+  private leaderboardText!: Phaser.GameObjects.Text
   
   // Input
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys
@@ -53,9 +83,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   preload() {
-    // Create simple colored rectangles for sprites
-    this.load.image('player', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==')
-    this.load.image('nexus', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==')
+    // Create simple colored graphics programmatically instead of loading images
+    this.load.image('pixel', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==')
   }
 
   create() {
@@ -63,7 +92,7 @@ export class GameScene extends Phaser.Scene {
     this.influenceGraphics = this.add.graphics()
     
     // Create particle manager for effects
-    this.particleManager = this.add.particles(0, 0, 'player', {
+    this.particleManager = this.add.particles(0, 0, 'pixel', {
       scale: { start: 0.5, end: 0 },
       speed: { min: 50, max: 100 },
       lifespan: 500,
@@ -84,6 +113,15 @@ export class GameScene extends Phaser.Scene {
     this.input.keyboard!.on('keydown-E', () => this.handleHarvest())
     this.input.keyboard!.on('keydown-Q', () => this.handleBoostNexus())
     this.input.keyboard!.on('keydown-SPACE', () => this.handleDeployBeacon())
+    this.input.keyboard!.on('keydown-F', () => this.handleAttackNearestPlayer())
+
+    // Create leaderboard UI
+    this.leaderboardText = this.add.text(10, 10, '', {
+      fontSize: '14px',
+      color: '#ffffff',
+      backgroundColor: '#000000',
+      padding: { x: 10, y: 10 }
+    }).setScrollFactor(0).setDepth(1000)
   }
 
   initializeGame(socket: Socket, player: Player, gameState: GameState) {
@@ -209,7 +247,7 @@ export class GameScene extends Phaser.Scene {
     this.gameState = newGameState
     
     // Update current player data
-    const updatedPlayer = Array.from(newGameState.players.values())
+    const updatedPlayer = Object.values(newGameState.players)
       .find(p => p.id === this.currentPlayer.id)
     if (updatedPlayer) {
       this.currentPlayer = updatedPlayer
@@ -222,13 +260,16 @@ export class GameScene extends Phaser.Scene {
     this.renderInfluenceMap()
     this.renderNexuses()
     this.renderPlayers()
+    this.renderHealthBars()
+    this.renderPowerUps()
+    this.renderLeaderboard()
   }
 
   private renderInfluenceMap() {
     this.influenceGraphics.clear()
     
     // Create a simple influence visualization
-    const players = Array.from(this.gameState.players.values())
+    const players = Object.values(this.gameState.players)
     players.forEach(player => {
       if (player.influence > 0) {
         const radius = Math.min(player.influence * 2, 100)
@@ -280,7 +321,7 @@ export class GameScene extends Phaser.Scene {
       // Update control color
       const base = container.list[0] as Phaser.GameObjects.Arc
       if (nexus.controlledBy) {
-        const controllingPlayer = Array.from(this.gameState.players.values())
+        const controllingPlayer = Object.values(this.gameState.players)
           .find(p => p.id === nexus.controlledBy)
         if (controllingPlayer) {
           base.fillColor = Phaser.Display.Color.HexStringToColor(controllingPlayer.color).color
@@ -292,15 +333,15 @@ export class GameScene extends Phaser.Scene {
   }
 
   private renderPlayers() {
-    const players = Array.from(this.gameState.players.values())
+    const players = Object.values(this.gameState.players)
     
     players.forEach(player => {
       let sprite = this.playerSprites.get(player.id)
       
       if (!sprite) {
-        sprite = this.add.sprite(player.x, player.y, 'player')
-        sprite.setDisplaySize(20, 20)
-        sprite.setTint(Phaser.Display.Color.HexStringToColor(player.color).color)
+        // Create player as a circle instead of sprite
+        sprite = this.add.circle(player.x, player.y, 10, Phaser.Display.Color.HexStringToColor(player.color).color) as any
+        sprite.setStrokeStyle(2, 0xffffff)
         
         // Add player name text
         const nameText = this.add.text(player.x, player.y - 25, player.name, {
@@ -351,7 +392,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private getPlayerAtPosition(x: number, y: number): Player | null {
-    return Array.from(this.gameState.players.values()).find(player => {
+    return Object.values(this.gameState.players).find(player => {
       const distance = Phaser.Math.Distance.Between(player.x, player.y, x, y)
       return distance < 25
     }) || null
@@ -365,6 +406,96 @@ export class GameScene extends Phaser.Scene {
       case 'energy-pulse':
         this.createPulseEffect()
         break
+      case 'player-attacked':
+        this.handlePlayerAttackedEvent(event.data)
+        break
+      case 'player-killed':
+        this.handlePlayerKilledEvent(event.data)
+        break
+      case 'powerup-spawned':
+        // Power-ups are handled in renderPowerUps
+        break
+      case 'powerup-collected':
+        this.handlePowerUpCollectedEvent(event.data)
+        break
+    }
+  }
+
+  private handlePlayerAttackedEvent(data: any) {
+    const attacker = Object.values(this.gameState.players).find(p => p.id === data.attackerId)
+    const target = Object.values(this.gameState.players).find(p => p.id === data.targetId)
+    
+    if (attacker && target) {
+      this.createAttackEffect(attacker.x, attacker.y, target.x, target.y)
+      
+      // Create damage number
+      const damageText = this.add.text(target.x, target.y - 20, `-${data.damage}`, {
+        fontSize: '16px',
+        color: '#ff0000',
+        fontStyle: 'bold'
+      }).setOrigin(0.5)
+      
+      this.tweens.add({
+        targets: damageText,
+        y: target.y - 40,
+        alpha: 0,
+        duration: 1000,
+        onComplete: () => damageText.destroy()
+      })
+    }
+  }
+
+  private handlePlayerKilledEvent(data: any) {
+    const victim = Object.values(this.gameState.players).find(p => p.id === data.victimId)
+    
+    if (victim) {
+      // Create death effect
+      this.particleManager.setPosition(victim.x, victim.y)
+      this.particleManager.setTint(0xff0000)
+      this.particleManager.explode(20)
+      
+      // Show kill message
+      const killText = this.add.text(victim.x, victim.y, `${data.killerName} eliminated ${data.victimName}!`, {
+        fontSize: '14px',
+        color: '#ffff00',
+        backgroundColor: '#000000',
+        padding: { x: 5, y: 5 }
+      }).setOrigin(0.5)
+      
+      this.tweens.add({
+        targets: killText,
+        y: victim.y - 50,
+        alpha: 0,
+        duration: 2000,
+        onComplete: () => killText.destroy()
+      })
+    }
+  }
+
+  private handlePowerUpCollectedEvent(data: any) {
+    // Create collection effect
+    const player = Object.values(this.gameState.players).find(p => p.id === data.playerId)
+    
+    if (player) {
+      this.particleManager.setPosition(player.x, player.y)
+      this.particleManager.setTint(this.getPowerUpColor(data.powerUpType))
+      this.particleManager.explode(15)
+      
+      // Show power-up text
+      const powerUpText = this.add.text(player.x, player.y - 30, `+${data.powerUpType.toUpperCase()}!`, {
+        fontSize: '12px',
+        color: '#ffffff',
+        backgroundColor: '#000000',
+        padding: { x: 3, y: 3 }
+      }).setOrigin(0.5)
+      
+      this.tweens.add({
+        targets: powerUpText,
+        y: player.y - 50,
+        alpha: 0,
+        duration: 1500,
+        onComplete: () => powerUpText.destroy()
+      })
     }
   }
 
@@ -430,5 +561,148 @@ export class GameScene extends Phaser.Scene {
         })
       }
     })
+  }
+
+  private renderHealthBars() {
+    const players = Object.values(this.gameState.players)
+    
+    players.forEach(player => {
+      if (!player.isAlive) return
+      
+      let healthBarContainer = this.playerHealthBars.get(player.id)
+      
+      if (!healthBarContainer) {
+        // Create health bar container
+        healthBarContainer = this.add.container(player.x, player.y - 35)
+        
+        // Background bar (red)
+        const bgBar = this.add.rectangle(0, 0, 40, 6, 0xff0000)
+        
+        // Health bar (green)
+        const healthBar = this.add.rectangle(0, 0, 40, 6, 0x00ff00)
+        healthBar.setData('isHealthBar', true)
+        
+        healthBarContainer.add([bgBar, healthBar])
+        this.playerHealthBars.set(player.id, healthBarContainer)
+      }
+      
+      // Update position
+      healthBarContainer.setPosition(player.x, player.y - 35)
+      
+      // Update health bar width
+      const healthBar = healthBarContainer.list.find((obj: any) => obj.getData('isHealthBar'))
+      if (healthBar) {
+        const healthPercent = player.health / player.maxHealth
+        const newWidth = 40 * healthPercent
+        ;(healthBar as Phaser.GameObjects.Rectangle).setSize(newWidth, 6)
+        ;(healthBar as Phaser.GameObjects.Rectangle).setPosition(-(40 - newWidth) / 2, 0)
+      }
+    })
+    
+    // Remove health bars for dead or disconnected players
+    this.playerHealthBars.forEach((container, playerId) => {
+      const player = players.find(p => p.id === playerId)
+      if (!player || !player.isAlive) {
+        container.destroy()
+        this.playerHealthBars.delete(playerId)
+      }
+    })
+  }
+
+  private renderPowerUps() {
+    if (!this.gameState.powerUps) return
+    
+    this.gameState.powerUps.forEach(powerUp => {
+      if (powerUp.collected) return
+      
+      let sprite = this.powerUpSprites.get(powerUp.id)
+      
+      if (!sprite) {
+        // Create power-up sprite
+        const color = this.getPowerUpColor(powerUp.type)
+        sprite = this.add.sprite(powerUp.x, powerUp.y, 'pixel')
+        sprite.setDisplaySize(20, 20)
+        sprite.setTint(color)
+        sprite.setAlpha(0.8)
+        
+        // Add pulsing animation
+        this.tweens.add({
+          targets: sprite,
+          scaleX: 1.2,
+          scaleY: 1.2,
+          duration: 1000,
+          yoyo: true,
+          repeat: -1
+        })
+        
+        this.powerUpSprites.set(powerUp.id, sprite)
+      }
+    })
+    
+    // Remove collected power-ups
+    this.powerUpSprites.forEach((sprite, powerUpId) => {
+      const powerUp = this.gameState.powerUps?.find(p => p.id === powerUpId)
+      if (!powerUp || powerUp.collected) {
+        sprite.destroy()
+        this.powerUpSprites.delete(powerUpId)
+      }
+    })
+  }
+
+  private getPowerUpColor(type: string): number {
+    switch (type) {
+      case 'speed': return 0x00ffff    // Cyan
+      case 'shield': return 0x0000ff   // Blue
+      case 'damage': return 0xff0000   // Red
+      case 'health': return 0x00ff00   // Green
+      case 'energy': return 0xffff00   // Yellow
+      default: return 0xffffff         // White
+    }
+  }
+
+  private renderLeaderboard() {
+    if (!this.gameState.leaderboard) return
+    
+    let leaderboardText = 'LEADERBOARD\n'
+    this.gameState.leaderboard.slice(0, 5).forEach((entry, index) => {
+      const isCurrentPlayer = entry.playerId === this.currentPlayer.id
+      const prefix = isCurrentPlayer ? '> ' : '  '
+      leaderboardText += `${prefix}${index + 1}. ${entry.playerName}: ${entry.score} (${entry.kills}/${entry.deaths})\n`
+    })
+    
+    this.leaderboardText.setText(leaderboardText)
+  }
+
+  private handleAttackNearestPlayer() {
+    const players = Object.values(this.gameState.players)
+    let nearestPlayer: Player | null = null
+    let nearestDistance = Infinity
+    
+    players.forEach(player => {
+      if (player.id === this.currentPlayer.id || !player.isAlive) return
+      
+      const distance = Phaser.Math.Distance.Between(
+        this.currentPlayer.x, this.currentPlayer.y,
+        player.x, player.y
+      )
+      
+      if (distance < nearestDistance && distance <= this.currentPlayer.attackRange) {
+        nearestDistance = distance
+        nearestPlayer = player
+      }
+    })
+    
+    if (nearestPlayer) {
+      this.socket.emit('player-action', {
+        type: 'attack',
+        data: { targetId: nearestPlayer.id }
+      })
+      
+      // Visual feedback
+      this.createAttackEffect(
+        this.currentPlayer.x, this.currentPlayer.y,
+        nearestPlayer.x, nearestPlayer.y
+      )
+    }
   }
 }

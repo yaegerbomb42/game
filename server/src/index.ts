@@ -70,6 +70,22 @@ io.on('connection', (socket) => {
       color: getPlayerColor(room.getPlayerCount()),
       isAlive: true,
       lastAction: Date.now(),
+      // Combat properties
+      health: 100,
+      maxHealth: 100,
+      attackPower: 25,
+      attackRange: 80,
+      lastAttack: 0,
+      attackCooldown: 1000, // 1 second cooldown
+      // Stats
+      kills: 0,
+      deaths: 0,
+      score: 0,
+      // Power-ups
+      activePowerUps: [],
+      // Movement
+      speed: 150,
+      lastMovement: 0,
     };
 
     room.addPlayer(socket, player);
@@ -78,7 +94,7 @@ io.on('connection', (socket) => {
     socket.emit('joined-room', {
       roomId: targetRoomId,
       player,
-      gameState: room.getGameState(),
+      gameState: room.getSerializableGameState(),
     });
 
     console.log(`Player ${playerName} joined room ${targetRoomId}`);
