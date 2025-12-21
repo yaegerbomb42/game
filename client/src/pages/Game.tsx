@@ -66,6 +66,9 @@ const Game = () => {
       })
     } else {
       console.log('Using existing socket connection for game')
+      // If we have an existing socket, we should already be in the room
+      // Request current game state
+      socket.emit('get-game-state')
     }
 
     socket.on('joined-room', (data) => {

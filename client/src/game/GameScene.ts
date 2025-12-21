@@ -339,9 +339,10 @@ export class GameScene extends Phaser.Scene {
       let sprite = this.playerSprites.get(player.id)
       
       if (!sprite) {
-        // Create player as a circle instead of sprite
-        sprite = this.add.circle(player.x, player.y, 10, Phaser.Display.Color.HexStringToColor(player.color).color) as any
-        sprite.setStrokeStyle(2, 0xffffff)
+        // Create player sprite
+        sprite = this.add.sprite(player.x, player.y, 'pixel')
+        sprite.setDisplaySize(20, 20)
+        sprite.setTint(Phaser.Display.Color.HexStringToColor(player.color).color)
         
         // Add player name text
         const nameText = this.add.text(player.x, player.y - 25, player.name, {
