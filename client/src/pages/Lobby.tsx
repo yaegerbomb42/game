@@ -36,7 +36,7 @@ const Lobby = () => {
       console.log('Joined room:', data)
       setRoomState({
         roomId: data.roomId,
-        players: Array.from(data.gameState.players.values()),
+        players: Object.values(data.gameState.players),
         gamePhase: data.gameState.gamePhase
       })
       setIsConnecting(false)
@@ -64,7 +64,7 @@ const Lobby = () => {
       if (roomState) {
         setRoomState({
           ...roomState,
-          players: Array.from(gameState.players.values()),
+          players: Object.values(gameState.players),
           gamePhase: gameState.gamePhase
         })
       }

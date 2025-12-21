@@ -208,7 +208,7 @@ export class GameScene extends Phaser.Scene {
     this.gameState = newGameState
     
     // Update current player data
-    const updatedPlayer = Array.from(newGameState.players.values())
+    const updatedPlayer = Object.values(newGameState.players)
       .find(p => p.id === this.currentPlayer.id)
     if (updatedPlayer) {
       this.currentPlayer = updatedPlayer
@@ -227,7 +227,7 @@ export class GameScene extends Phaser.Scene {
     this.influenceGraphics.clear()
     
     // Create a simple influence visualization
-    const players = Array.from(this.gameState.players.values())
+    const players = Object.values(this.gameState.players)
     players.forEach(player => {
       if (player.influence > 0) {
         const radius = Math.min(player.influence * 2, 100)
@@ -279,7 +279,7 @@ export class GameScene extends Phaser.Scene {
       // Update control color
       const base = container.list[0] as Phaser.GameObjects.Arc
       if (nexus.controlledBy) {
-        const controllingPlayer = Array.from(this.gameState.players.values())
+        const controllingPlayer = Object.values(this.gameState.players)
           .find(p => p.id === nexus.controlledBy)
         if (controllingPlayer) {
           base.fillColor = Phaser.Display.Color.HexStringToColor(controllingPlayer.color).color
@@ -291,7 +291,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private renderPlayers() {
-    const players = Array.from(this.gameState.players.values())
+    const players = Object.values(this.gameState.players)
     
     players.forEach(player => {
       let sprite = this.playerSprites.get(player.id)
@@ -350,7 +350,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private getPlayerAtPosition(x: number, y: number): Player | null {
-    return Array.from(this.gameState.players.values()).find(player => {
+    return Object.values(this.gameState.players).find(player => {
       const distance = Phaser.Math.Distance.Between(player.x, player.y, x, y)
       return distance < 25
     }) || null

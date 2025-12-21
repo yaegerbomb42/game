@@ -221,8 +221,8 @@ const Game = () => {
 
         {/* Player List */}
         <div className="player-list">
-          <h4>Players ({Array.from(gameState.players.values()).length})</h4>
-          {Array.from(gameState.players.values())
+          <h4>Players ({Object.values(gameState.players).length})</h4>
+          {Object.values(gameState.players)
             .sort((a, b) => b.influence - a.influence)
             .map((player) => (
             <div key={player.id} className="player-item">
