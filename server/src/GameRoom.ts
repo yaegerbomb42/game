@@ -318,13 +318,24 @@ export class GameRoom extends EventEmitter {
   }
 
   private broadcastGameState() {
-    this.io.to(this.roomId).emit('game-state-update', this.getGameState());
+    this.io.to(this.roomId).emit('game-state-update', this.getSerializableGameState());
   }
 
   // Public methods
   getGameState(): GameState {
     return {
       players: this.players,
+      nexuses: this.nexuses,
+      gamePhase: this.gamePhase,
+      phaseStartTime: this.phaseStartTime,
+      gameStartTime: this.gameStartTime,
+      winner: this.winner,
+    };
+  }
+
+  getSerializableGameState() {
+    return {
+      players: Object.fromEntries(this.players),
       nexuses: this.nexuses,
       gamePhase: this.gamePhase,
       phaseStartTime: this.phaseStartTime,

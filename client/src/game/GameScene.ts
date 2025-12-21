@@ -53,9 +53,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   preload() {
-    // Create simple colored rectangles for sprites
-    this.load.image('player', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==')
-    this.load.image('nexus', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==')
+    // Create simple colored graphics programmatically instead of loading images
+    this.load.image('pixel', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==')
   }
 
   create() {
@@ -63,7 +62,7 @@ export class GameScene extends Phaser.Scene {
     this.influenceGraphics = this.add.graphics()
     
     // Create particle manager for effects
-    this.particleManager = this.add.particles(0, 0, 'player', {
+    this.particleManager = this.add.particles(0, 0, 'pixel', {
       scale: { start: 0.5, end: 0 },
       speed: { min: 50, max: 100 },
       lifespan: 500,
@@ -298,9 +297,9 @@ export class GameScene extends Phaser.Scene {
       let sprite = this.playerSprites.get(player.id)
       
       if (!sprite) {
-        sprite = this.add.sprite(player.x, player.y, 'player')
-        sprite.setDisplaySize(20, 20)
-        sprite.setTint(Phaser.Display.Color.HexStringToColor(player.color).color)
+        // Create player as a circle instead of sprite
+        sprite = this.add.circle(player.x, player.y, 10, Phaser.Display.Color.HexStringToColor(player.color).color) as any
+        sprite.setStrokeStyle(2, 0xffffff)
         
         // Add player name text
         const nameText = this.add.text(player.x, player.y - 25, player.name, {

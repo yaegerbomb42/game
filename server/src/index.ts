@@ -78,7 +78,7 @@ io.on('connection', (socket) => {
     socket.emit('joined-room', {
       roomId: targetRoomId,
       player,
-      gameState: room.getGameState(),
+      gameState: room.getSerializableGameState(),
     });
 
     console.log(`Player ${playerName} joined room ${targetRoomId}`);

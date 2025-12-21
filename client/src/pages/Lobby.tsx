@@ -48,12 +48,13 @@ const Lobby = () => {
     })
 
     newSocket.on('game-event', (event) => {
+      console.log('Game event received:', event)
       if (event.type === 'player-joined' || event.type === 'player-left') {
-        // Update player list
-        // This would need to be handled by getting updated game state
+        // Update player list - handled by game-state-update
       } else if (event.type === 'game-started') {
         // Navigate to game
         if (roomState) {
+          console.log('Navigating to game:', roomState.roomId)
           navigate(`/game/${roomState.roomId}`)
         }
       }
@@ -87,6 +88,7 @@ const Lobby = () => {
 
     setIsConnecting(true)
     setError('')
+    localStorage.setItem('playerName', playerName.trim())
     socket?.emit('join-room', { playerName: playerName.trim() })
   }
 
@@ -103,6 +105,7 @@ const Lobby = () => {
 
     setIsConnecting(true)
     setError('')
+    localStorage.setItem('playerName', playerName.trim())
     socket?.emit('join-room', { 
       roomId: roomId.trim().toUpperCase(), 
       playerName: playerName.trim() 
