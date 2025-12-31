@@ -120,8 +120,12 @@ docker-compose up --build
 ### Recommended Hosting
 
 - **Frontend**: Vercel, Netlify, or any static hosting
-- **Backend**: Railway, Render, Fly.io, or any Node.js hosting
-- **Database**: Redis (for session management in production)
+- **Backend**: Railway, Render, Fly.io, or any Node.js hosting (Socket.io requires persistent connections - cannot use Vercel serverless)
+- **Database**: Redis (for session management in production - optional)
+
+**Important**: Socket.io requires persistent WebSocket connections. The server cannot be deployed to Vercel serverless functions. Deploy the server separately to Railway, Render, or Fly.io.
+
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed deployment instructions.
 
 ## 🎮 Game Mechanics
 

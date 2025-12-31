@@ -108,9 +108,30 @@ const Lobby = () => {
       setIsConnecting(false)
     })
 
-    newSocket.on('connect_error', () => {
-      setError('Failed to connect to server')
+    newSocket.on('connect_error', (err) => {
+      console.error('Connection error:', err)
+      setError('Failed to connect to server. Please check your connection.')
       setIsConnecting(false)
+    })
+
+    newSocket.on('error', (err) => {
+      console.error('Socket error:', err)
+      setError('Connection error occurred')
+    })
+
+    // Reconnection handling
+    newSocket.on('reconnect', (attemptNumber) => {
+      console.log('Reconnected after', attemptNumber, 'attempts')
+      setError('')
+      fetchAvailableRooms()
+    })
+
+    newSocket.on('reconnect_attempt', () => {
+      setError('Reconnecting...')
+    })
+
+    newSocket.on('reconnect_failed', () => {
+      setError('Failed to reconnect. Please refresh the page.')
     })
 
     // Fetch available rooms periodically
@@ -172,21 +193,17 @@ const Lobby = () => {
       return
     }
 
+    if (!socket || !socket.connected) {
+      setError('Not connected to server. Please wait...')
+      return
+    }
+
     setIsConnecting(true)
     setError('')
     localStorage.setItem('playerName', playerName.trim())
     
-    // Check for available rooms first
-    if (availableRooms.length > 0) {
-      const bestRoom = availableRooms.find(r => r.playerCount < 6) || availableRooms[0]
-      socket?.emit('join-room', { 
-        roomId: bestRoom.roomId, 
-        playerName: playerName.trim() 
-      })
-    } else {
-      // Create new room
-      socket?.emit('join-room', { playerName: playerName.trim() })
-    }
+    // Use quick-match endpoint for better matchmaking
+    socket.emit('quick-match', { playerName: playerName.trim() })
   }
 
   const handleLeaveRoom = () => {
@@ -273,8 +290,15 @@ const Lobby = () => {
   return (
     <div className="lobby-container">
       <div className="lobby-card" style={{ maxWidth: '600px' }}>
-        <h1 style={{ fontSize: '2.5rem', marginBottom: '5px' }}>🎮 Nexus Wars</h1>
-        <p style={{ opacity: 0.8, marginBottom: '20px' }}>Fast-paced 2D multiplayer strategy</p>
+        <h1 style={{ 
+          fontSize: '2.5rem', 
+          marginBottom: '5px',
+          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          WebkitBackgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+          backgroundClip: 'text'
+        }}>🎮 Nexus Wars</h1>
+        <p style={{ opacity: 0.8, marginBottom: '20px', fontSize: '16px' }}>Fast-paced 2D multiplayer strategy</p>
 
         {error && (
           <div style={{ 

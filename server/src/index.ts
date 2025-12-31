@@ -7,14 +7,48 @@ import { Player } from './types';
 
 const app = express();
 const server = createServer(app);
+
+// Enhanced CORS configuration for Vercel deployment
+const allowedOrigins = process.env.NODE_ENV === 'production' 
+  ? [
+      process.env.VITE_CLIENT_URL || 'https://nexus-wars.vercel.app',
+      'https://*.vercel.app',
+      'http://localhost:3000'
+    ]
+  : ['http://localhost:3000'];
+
 const io = new Server(server, {
   cors: {
-    origin: process.env.NODE_ENV === 'production' ? false : ['http://localhost:3000'],
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+      
+      // Check if origin matches allowed patterns
+      const isAllowed = allowedOrigins.some(allowed => {
+        if (allowed.includes('*')) {
+          const pattern = allowed.replace('*', '.*');
+          return new RegExp(pattern).test(origin);
+        }
+        return origin === allowed;
+      });
+      
+      if (isAllowed) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     methods: ['GET', 'POST'],
+    credentials: true,
   },
+  transports: ['websocket', 'polling'],
+  allowEIO3: true,
 });
 
-app.use(cors());
+app.use(cors({
+  origin: allowedOrigins,
+  credentials: true,
+}));
 app.use(express.json());
 
 // Store active game rooms
@@ -32,12 +66,24 @@ app.get('/health', (req, res) => {
 // Get available rooms for quick match
 app.get('/rooms', (req, res) => {
   const availableRooms = Array.from(gameRooms.entries())
-    .filter(([_, room]) => !room.isFull() && room.getPlayerCount() > 0)
+    .filter(([_, room]) => {
+      const playerCount = room.getPlayerCount();
+      const gamePhase = room.getGamePhase();
+      // Include rooms that are waiting or have space
+      return !room.isFull() && playerCount > 0 && (gamePhase === 'waiting' || playerCount < 6);
+    })
     .map(([id, room]) => ({
       roomId: id,
       playerCount: room.getPlayerCount(),
       maxPlayers: 10,
-    }));
+      gamePhase: room.getGamePhase(),
+    }))
+    .sort((a, b) => {
+      // Prioritize rooms with more players but not full
+      if (a.gamePhase === 'waiting' && b.gamePhase !== 'waiting') return -1;
+      if (b.gamePhase === 'waiting' && a.gamePhase !== 'waiting') return 1;
+      return b.playerCount - a.playerCount;
+    });
   res.json({ rooms: availableRooms });
 });
 
@@ -156,22 +202,35 @@ io.on('connection', (socket) => {
 
   // Quick match - find available room or create new one
   socket.on('quick-match', (data: { playerName: string }) => {
-    // Find a room with space that's waiting for players
+    // Find best available room
     let bestRoom: GameRoom | null = null;
     let bestRoomIdFound: string | null = null;
+    let bestScore = -1;
     
     for (const [rid, room] of gameRooms) {
-      if (!room.isFull() && room.getPlayerCount() > 0 && room.getPlayerCount() < 6) {
-        bestRoom = room;
-        bestRoomIdFound = rid;
-        break;
+      const playerCount = room.getPlayerCount();
+      const gamePhase = room.getGamePhase();
+      
+      // Skip full rooms
+      if (room.isFull()) continue;
+      
+      // Prefer waiting rooms with 1-5 players
+      if (gamePhase === 'waiting' && playerCount >= 1 && playerCount < 6) {
+        // Score: prefer rooms closer to 2-4 players for faster matchmaking
+        const score = playerCount >= 2 && playerCount <= 4 ? 100 + playerCount : playerCount;
+        if (score > bestScore) {
+          bestScore = score;
+          bestRoom = room;
+          bestRoomIdFound = rid;
+        }
       }
     }
     
     if (bestRoom && bestRoomIdFound) {
+      // Return best match - client will join
       socket.emit('quick-match-found', { roomId: bestRoomIdFound });
     } else {
-      // Create new room
+      // Create new room - client will join
       const newRoomId = generateRoomId();
       socket.emit('quick-match-found', { roomId: newRoomId, isNew: true });
     }
@@ -218,6 +277,13 @@ function findPlayerRoom(playerId: string): GameRoom | undefined {
 }
 
 const PORT = process.env.PORT || 3001;
+
+const PORT = process.env.PORT || 3001;
+
+// Note: Socket.io requires persistent WebSocket connections
+// This server should be deployed to Railway, Render, Fly.io, or similar platforms
+// Vercel serverless functions do not support persistent connections
 server.listen(PORT, () => {
   console.log(`🚀 Nexus Wars server running on port ${PORT}`);
+  console.log(`📡 WebSocket server ready for connections`);
 });
