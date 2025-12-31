@@ -3,6 +3,10 @@ export interface Player {
   name: string;
   x: number;
   y: number;
+  targetX: number;
+  targetY: number;
+  velocityX: number;
+  velocityY: number;
   energy: number;
   influence: number;
   color: string;
@@ -15,15 +19,27 @@ export interface Player {
   attackRange: number;
   lastAttack: number;
   attackCooldown: number;
+  // Combo system
+  comboCount: number;
+  lastComboTime: number;
+  killStreak: number;
   // Stats
   kills: number;
   deaths: number;
   score: number;
+  damageDealt: number;
+  nexusesCaptured: number;
   // Power-ups
   activePowerUps: PowerUp[];
   // Movement
   speed: number;
   lastMovement: number;
+  // Respawn invincibility
+  invincibleUntil: number;
+  // Special ability
+  abilityType: 'dash' | 'heal' | 'shield' | 'scan';
+  abilityCooldown: number;
+  lastAbilityUse: number;
 }
 
 export interface PowerUp {
@@ -45,6 +61,10 @@ export interface Nexus {
   controlledBy: string | null;
   lastPulse: number;
   chargeLevel: number;
+  // Contestation system
+  contestProgress: Map<string, number>; // playerId -> capture progress (0-100)
+  isContested: boolean;
+  captureRate: number; // Base rate for capturing
 }
 
 export interface GameState {
@@ -61,6 +81,24 @@ export interface GameState {
     score: number;
     kills: number;
     deaths: number;
+    killStreak: number;
+    damageDealt: number;
+  }>;
+  matchNumber: number;
+}
+
+export interface MatchResult {
+  winnerId: string;
+  winnerName: string;
+  duration: number;
+  playerStats: Array<{
+    playerId: string;
+    playerName: string;
+    score: number;
+    kills: number;
+    deaths: number;
+    damageDealt: number;
+    nexusesCaptured: number;
   }>;
 }
 
@@ -79,7 +117,8 @@ export interface PlayerAction {
 
 export interface GameEvent {
   type: 'player-joined' | 'player-left' | 'nexus-captured' | 'energy-pulse' | 'game-started' | 'game-ended' | 
-        'player-attacked' | 'player-killed' | 'powerup-spawned' | 'powerup-collected' | 'achievement-unlocked';
+        'player-attacked' | 'player-killed' | 'powerup-spawned' | 'powerup-collected' | 'achievement-unlocked' |
+        'beacon-deployed' | 'attack-blocked' | 'player-respawned' | 'ability-used' | 'phase-changed';
   data: any;
   timestamp: number;
 }
