@@ -85,9 +85,48 @@ nexus-wars/
 
 ## 🚀 Deployment
 
-### Environment Variables
+### Quick Deploy Guide
 
-Create `.env` files for production:
+Since this game uses WebSockets for real-time multiplayer, you'll need to deploy the frontend and backend separately:
+
+- **Frontend (Client)**: Deploy to Vercel, Netlify, or any static hosting
+- **Backend (Server)**: Deploy to Railway, Render, Fly.io, or any WebSocket-compatible hosting
+
+### Frontend Deployment (Vercel)
+
+1. Push your code to GitHub
+2. Import your repository to [Vercel](https://vercel.com)
+3. Set the root directory to `client`
+4. Add environment variable: `VITE_SERVER_URL=https://your-server-url.com`
+5. Deploy!
+
+### Backend Deployment Options
+
+#### Railway (Recommended)
+```bash
+cd server
+npm install -g @railway/cli
+railway login
+railway init
+railway up
+```
+Configuration file included: `server/railway.json`
+
+#### Render
+1. Create a new Web Service on [Render](https://render.com)
+2. Connect your GitHub repo
+3. Set root directory to `server`
+4. Render will auto-detect the `render.yaml` configuration
+
+#### Fly.io
+```bash
+cd server
+flyctl launch
+flyctl deploy
+```
+Configuration file included: `server/fly.toml`
+
+### Environment Variables
 
 **Client (.env)**
 ```
@@ -98,6 +137,7 @@ VITE_SERVER_URL=https://your-server-domain.com
 ```
 PORT=3001
 NODE_ENV=production
+ALLOWED_ORIGINS=https://your-frontend-domain.vercel.app
 ```
 
 ### Build for Production
@@ -117,11 +157,15 @@ npm start
 docker-compose up --build
 ```
 
-### Recommended Hosting
+### Hosting Architecture
 
-- **Frontend**: Vercel, Netlify, or any static hosting
-- **Backend**: Railway, Render, Fly.io, or any Node.js hosting
-- **Database**: Redis (for session management in production)
+```
+┌─────────────────┐     WebSocket     ┌─────────────────┐
+│  Vercel/Netlify │ ←───────────────→ │ Railway/Render  │
+│   (Frontend)    │                   │    (Backend)    │
+│  Static Files   │      HTTP/WS      │  Game Server    │
+└─────────────────┘                   └─────────────────┘
+```
 
 ## 🎮 Game Mechanics
 
