@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { io, Socket } from 'socket.io-client'
 
@@ -38,6 +38,16 @@ const Lobby = () => {
   const [availableRooms, setAvailableRooms] = useState<AvailableRoom[]>([])
   const [showTutorial, setShowTutorial] = useState(false)
   const navigate = useNavigate()
+  const roomStateRef = useRef<RoomState | null>(null)
+  const socketRef = useRef<Socket | null>(null)
+
+  useEffect(() => {
+    roomStateRef.current = roomState
+  }, [roomState])
+
+  useEffect(() => {
+    socketRef.current = socket
+  }, [socket])
 
   useEffect(() => {
     const newSocket = io(import.meta.env.VITE_SERVER_URL || 'http://localhost:3001')
@@ -66,28 +76,33 @@ const Lobby = () => {
       if (event.type === 'player-joined' || event.type === 'player-left') {
         // Handled by game-state-update
       } else if (event.type === 'game-started') {
-        if (roomState && socket) {
-          navigate(`/game/${roomState.roomId}`, { 
-            state: { socket: socket, playerName: localStorage.getItem('playerName') } 
+        const currentRoomState = roomStateRef.current
+        const currentSocket = socketRef.current
+        if (currentRoomState && currentSocket) {
+          navigate(`/game/${currentRoomState.roomId}`, {
+            state: { socket: currentSocket, playerName: localStorage.getItem('playerName') },
           })
         }
       }
     })
 
     newSocket.on('game-state-update', (gameState) => {
-      if (roomState) {
-        const wasWaiting = roomState.gamePhase === 'waiting'
+      const currentRoomState = roomStateRef.current
+      if (currentRoomState) {
+        const wasWaiting = currentRoomState.gamePhase === 'waiting'
         const isNowStarted = gameState.gamePhase !== 'waiting'
         
-        setRoomState({
-          ...roomState,
+        const nextRoomState: RoomState = {
+          ...currentRoomState,
           players: Object.values(gameState.players),
           gamePhase: gameState.gamePhase
-        })
+        }
+        setRoomState(nextRoomState)
         
-        if (wasWaiting && isNowStarted && socket) {
-          navigate(`/game/${roomState.roomId}`, { 
-            state: { socket: socket, playerName: localStorage.getItem('playerName') } 
+        const currentSocket = socketRef.current
+        if (wasWaiting && isNowStarted && currentSocket) {
+          navigate(`/game/${nextRoomState.roomId}`, {
+            state: { socket: currentSocket, playerName: localStorage.getItem('playerName') },
           })
         }
       }
@@ -108,8 +123,11 @@ const Lobby = () => {
       setIsConnecting(false)
     })
 
-    newSocket.on('connect_error', () => {
-      setError('Failed to connect to server')
+    newSocket.on('connect_error', (err: any) => {
+      const serverUrl = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001'
+      const message =
+        typeof err?.message === 'string' && err.message.length > 0 ? ` (${err.message})` : ''
+      setError(`Failed to connect to server: ${serverUrl}${message}`)
       setIsConnecting(false)
     })
 

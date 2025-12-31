@@ -7,14 +7,33 @@ import { Player } from './types';
 
 const app = express();
 const server = createServer(app);
+app.set('trust proxy', 1);
+
+/**
+ * CORS / origin handling
+ *
+ * - In production, a Vercel-hosted client will have a different origin per deployment.
+ * - This game does not use cookies/auth, so allowing all origins is acceptable by default.
+ * - If you want to restrict origins, set CLIENT_ORIGINS as a comma-separated list.
+ */
+const clientOrigins = (process.env.CLIENT_ORIGINS ?? '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+const allowAllOrigins = clientOrigins.length === 0;
 const io = new Server(server, {
   cors: {
-    origin: process.env.NODE_ENV === 'production' ? false : ['http://localhost:3000'],
+    origin: allowAllOrigins ? true : clientOrigins,
     methods: ['GET', 'POST'],
   },
 });
 
-app.use(cors());
+app.use(
+  cors({
+    origin: allowAllOrigins ? true : clientOrigins,
+  })
+);
 app.use(express.json());
 
 // Store active game rooms
@@ -41,36 +60,103 @@ app.get('/rooms', (req, res) => {
   res.json({ rooms: availableRooms });
 });
 
+// Create a room (useful for invite links / provisioning)
+app.post('/rooms', (req, res) => {
+  const requestedRoomId = typeof req.body?.roomId === 'string' ? req.body.roomId : undefined;
+  const normalized = requestedRoomId ? normalizeRoomId(requestedRoomId) : undefined;
+  const roomId = normalized && isValidRoomId(normalized) && !gameRooms.has(normalized)
+    ? normalized
+    : generateRoomId();
+
+  if (gameRooms.has(roomId)) {
+    // Extremely unlikely unless generateRoomId collided; retry once.
+    const retry = generateRoomId();
+    if (gameRooms.has(retry)) {
+      res.status(503).json({ error: 'Failed to allocate roomId. Please retry.' });
+      return;
+    }
+    res.json({ roomId: retry });
+    return;
+  }
+
+  const room = new GameRoom(roomId, io);
+  gameRooms.set(roomId, room);
+  room.on('empty', () => {
+    gameRooms.delete(roomId);
+    console.log(`Room ${roomId} deleted`);
+  });
+
+  res.json({ roomId });
+});
+
+// Quickjoin: find a room with players waiting, or create a new one
+app.post('/quickjoin', (req, res) => {
+  // Prefer smaller rooms that are already active, to start games quickly.
+  let targetRoomId: string | null = null;
+  for (const [rid, room] of gameRooms) {
+    if (!room.isFull() && room.getPlayerCount() > 0 && room.getPlayerCount() < 6) {
+      targetRoomId = rid;
+      break;
+    }
+  }
+
+  if (targetRoomId) {
+    res.json({ roomId: targetRoomId, created: false });
+    return;
+  }
+
+  const roomId = generateRoomId();
+  const room = new GameRoom(roomId, io);
+  gameRooms.set(roomId, room);
+  room.on('empty', () => {
+    gameRooms.delete(roomId);
+    console.log(`Room ${roomId} deleted`);
+  });
+
+  res.json({ roomId, created: true });
+});
+
 // Socket.io connection handling
 io.on('connection', (socket) => {
   console.log(`Player connected: ${socket.id}`);
 
   // Join or create a game room
   socket.on('join-room', (data: { roomId?: string; playerName: string }) => {
-    const { roomId, playerName } = data;
+    const { roomId: rawRoomId, playerName } = data;
     
     let room: GameRoom;
     let targetRoomId: string;
 
-    if (roomId && gameRooms.has(roomId)) {
+    const requestedRoomId = rawRoomId ? normalizeRoomId(rawRoomId) : undefined;
+
+    if (requestedRoomId && gameRooms.has(requestedRoomId)) {
       // Join existing room
-      room = gameRooms.get(roomId)!;
-      targetRoomId = roomId;
+      room = gameRooms.get(requestedRoomId)!;
+      targetRoomId = requestedRoomId;
       if (room.isFull()) {
         socket.emit('room-full');
         return;
       }
+    } else if (requestedRoomId && isValidRoomId(requestedRoomId) && !gameRooms.has(requestedRoomId)) {
+      // Create requested room (invite-code / quickjoin flow)
+      targetRoomId = requestedRoomId;
+      room = new GameRoom(targetRoomId, io);
+      gameRooms.set(targetRoomId, room);
+
+      room.on('empty', () => {
+        gameRooms.delete(targetRoomId);
+        console.log(`Room ${targetRoomId} deleted`);
+      });
     } else {
-      // Create new room
+      // Create new room with server-generated id
       targetRoomId = generateRoomId();
       room = new GameRoom(targetRoomId, io);
       gameRooms.set(targetRoomId, room);
       
       // Clean up room when it's empty
-      const roomIdToDelete = targetRoomId;
       room.on('empty', () => {
-        gameRooms.delete(roomIdToDelete);
-        console.log(`Room ${roomIdToDelete} deleted`);
+        gameRooms.delete(targetRoomId);
+        console.log(`Room ${targetRoomId} deleted`);
       });
     }
 
@@ -173,6 +259,12 @@ io.on('connection', (socket) => {
     } else {
       // Create new room
       const newRoomId = generateRoomId();
+      const newRoom = new GameRoom(newRoomId, io);
+      gameRooms.set(newRoomId, newRoom);
+      newRoom.on('empty', () => {
+        gameRooms.delete(newRoomId);
+        console.log(`Room ${newRoomId} deleted`);
+      });
       socket.emit('quick-match-found', { roomId: newRoomId, isNew: true });
     }
   });
@@ -197,7 +289,17 @@ io.on('connection', (socket) => {
 
 // Helper functions
 function generateRoomId(): string {
+  // 6 chars, uppercase, no ambiguous characters removed (keep simple).
   return Math.random().toString(36).substring(2, 8).toUpperCase();
+}
+
+function normalizeRoomId(input: string): string {
+  return input.trim().toUpperCase();
+}
+
+function isValidRoomId(roomId: string): boolean {
+  // Match client UX: 6-character code.
+  return /^[A-Z0-9]{6}$/.test(roomId);
 }
 
 function getPlayerColor(playerIndex: number): string {
