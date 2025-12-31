@@ -29,6 +29,18 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Get available rooms for quick match
+app.get('/rooms', (req, res) => {
+  const availableRooms = Array.from(gameRooms.entries())
+    .filter(([_, room]) => !room.isFull() && room.getPlayerCount() > 0)
+    .map(([id, room]) => ({
+      roomId: id,
+      playerCount: room.getPlayerCount(),
+      maxPlayers: 10,
+    }));
+  res.json({ rooms: availableRooms });
+});
+
 // Socket.io connection handling
 io.on('connection', (socket) => {
   console.log(`Player connected: ${socket.id}`);
@@ -38,11 +50,12 @@ io.on('connection', (socket) => {
     const { roomId, playerName } = data;
     
     let room: GameRoom;
-    let targetRoomId = roomId;
+    let targetRoomId: string;
 
     if (roomId && gameRooms.has(roomId)) {
       // Join existing room
       room = gameRooms.get(roomId)!;
+      targetRoomId = roomId;
       if (room.isFull()) {
         socket.emit('room-full');
         return;
@@ -54,17 +67,23 @@ io.on('connection', (socket) => {
       gameRooms.set(targetRoomId, room);
       
       // Clean up room when it's empty
+      const roomIdToDelete = targetRoomId;
       room.on('empty', () => {
-        gameRooms.delete(targetRoomId!);
-        console.log(`Room ${targetRoomId} deleted`);
+        gameRooms.delete(roomIdToDelete);
+        console.log(`Room ${roomIdToDelete} deleted`);
       });
     }
 
+    const abilities: Player['abilityType'][] = ['dash', 'heal', 'shield', 'scan'];
     const player: Player = {
       id: socket.id,
       name: playerName,
       x: Math.random() * 800,
       y: Math.random() * 600,
+      targetX: 0,
+      targetY: 0,
+      velocityX: 0,
+      velocityY: 0,
       energy: 0,
       influence: 0,
       color: getPlayerColor(room.getPlayerCount()),
@@ -76,16 +95,28 @@ io.on('connection', (socket) => {
       attackPower: 25,
       attackRange: 80,
       lastAttack: 0,
-      attackCooldown: 1000, // 1 second cooldown
+      attackCooldown: 800, // 0.8 second cooldown for faster combat
+      // Combo system
+      comboCount: 0,
+      lastComboTime: 0,
+      killStreak: 0,
       // Stats
       kills: 0,
       deaths: 0,
       score: 0,
+      damageDealt: 0,
+      nexusesCaptured: 0,
       // Power-ups
       activePowerUps: [],
       // Movement
-      speed: 150,
+      speed: 180,
       lastMovement: 0,
+      // Respawn invincibility
+      invincibleUntil: 0,
+      // Special ability - assign randomly for variety
+      abilityType: abilities[room.getPlayerCount() % abilities.length],
+      abilityCooldown: 15000, // 15 second cooldown
+      lastAbilityUse: 0,
     };
 
     room.addPlayer(socket, player);
@@ -120,6 +151,37 @@ io.on('connection', (socket) => {
     const room = findPlayerRoom(socket.id);
     if (room) {
       room.handlePlayerAction(socket.id, action);
+    }
+  });
+
+  // Quick match - find available room or create new one
+  socket.on('quick-match', (data: { playerName: string }) => {
+    // Find a room with space that's waiting for players
+    let bestRoom: GameRoom | null = null;
+    let bestRoomIdFound: string | null = null;
+    
+    for (const [rid, room] of gameRooms) {
+      if (!room.isFull() && room.getPlayerCount() > 0 && room.getPlayerCount() < 6) {
+        bestRoom = room;
+        bestRoomIdFound = rid;
+        break;
+      }
+    }
+    
+    if (bestRoom && bestRoomIdFound) {
+      socket.emit('quick-match-found', { roomId: bestRoomIdFound });
+    } else {
+      // Create new room
+      const newRoomId = generateRoomId();
+      socket.emit('quick-match-found', { roomId: newRoomId, isNew: true });
+    }
+  });
+
+  // Restart game request
+  socket.on('restart-game', () => {
+    const room = findPlayerRoom(socket.id);
+    if (room) {
+      room.restartGame();
     }
   });
 
