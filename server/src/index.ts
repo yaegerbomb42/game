@@ -89,7 +89,7 @@ io.on('connection', (socket) => {
     };
 
     room.addPlayer(socket, player);
-    socket.join(targetRoomId);
+    socket.join(targetRoomId!);
     
     socket.emit('joined-room', {
       roomId: targetRoomId,

@@ -1,0 +1,75 @@
+import { EventEmitter } from 'events';
+import { Server, Socket } from 'socket.io';
+import { Player, Nexus, GameState, PlayerAction, PowerUp } from './types';
+export declare class GameRoom extends EventEmitter {
+    private roomId;
+    private io;
+    private players;
+    private sockets;
+    private nexuses;
+    private powerUps;
+    private gamePhase;
+    private phaseStartTime;
+    private gameStartTime;
+    private winner;
+    private gameLoop;
+    private powerUpSpawnTimer;
+    constructor(roomId: string, io: Server);
+    private initializeNexuses;
+    addPlayer(socket: Socket, player: Player): void;
+    removePlayer(playerId: string): void;
+    handlePlayerAction(playerId: string, action: PlayerAction): void;
+    private handleMove;
+    private handleHarvest;
+    private handleDeployBeacon;
+    private handleBoostNexus;
+    private handleAttack;
+    private handleDefend;
+    private handlePlayerKilled;
+    private respawnPlayer;
+    private handleCollectPowerUp;
+    private applyPowerUpEffect;
+    private handleUseAbility;
+    private startGame;
+    private updateGamePhase;
+    private updateScores;
+    private updateNexuses;
+    private triggerEnergyPulse;
+    private endGame;
+    private startPowerUpSpawning;
+    private spawnPowerUp;
+    private isNearNexus;
+    private getPowerUpDuration;
+    private getPowerUpEffect;
+    private updatePowerUps;
+    private updatePlayerEffects;
+    private removePowerUpEffect;
+    private broadcastEvent;
+    private broadcastGameState;
+    getGameState(): GameState;
+    getSerializableGameState(): {
+        players: {
+            [k: string]: Player;
+        };
+        nexuses: Nexus[];
+        powerUps: PowerUp[];
+        gamePhase: "waiting" | "spawn" | "expansion" | "conflict" | "pulse" | "ended";
+        phaseStartTime: number;
+        gameStartTime: number;
+        winner: string | null;
+        leaderboard: {
+            playerId: string;
+            playerName: string;
+            score: number;
+            kills: number;
+            deaths: number;
+        }[];
+    };
+    private generateLeaderboard;
+    getPlayerCount(): number;
+    isFull(): boolean;
+    hasPlayer(playerId: string): boolean;
+    getPlayer(playerId: string): Player | undefined;
+    getRoomId(): string;
+}
+//# sourceMappingURL=GameRoom.d.ts.map

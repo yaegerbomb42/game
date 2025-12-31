@@ -13,15 +13,35 @@ interface Player {
   influence: number
   color: string
   isAlive: boolean
+  health: number
+  maxHealth: number
+  attackPower: number
+  attackRange: number
+  lastAttack: number
+  attackCooldown: number
+  kills: number
+  deaths: number
+  score: number
+  activePowerUps: any[]
+  speed: number
+  lastMovement: number
 }
 
 interface GameState {
-  players: Map<string, Player>
+  players: Record<string, Player>
   nexuses: any[]
+  powerUps: any[]
   gamePhase: string
   phaseStartTime: number
   gameStartTime: number
   winner: string | null
+  leaderboard: Array<{
+    playerId: string
+    playerName: string
+    score: number
+    kills: number
+    deaths: number
+  }>
 }
 
 interface GameOverData {
@@ -71,7 +91,7 @@ const Game = () => {
       socket.emit('get-game-state')
     }
 
-    socket.on('joined-room', (data) => {
+    socket.on('joined-room', (data: { roomId: string; player: Player; gameState: GameState }) => {
       console.log('Rejoined room:', data)
       setGameState(data.gameState)
       setCurrentPlayer(data.player)
@@ -81,7 +101,7 @@ const Game = () => {
       setGameState(newGameState)
     })
 
-    socket.on('game-event', (event) => {
+    socket.on('game-event', (event: { type: string; data: any }) => {
       console.log('Game event:', event)
       
       if (event.type === 'game-ended') {
@@ -207,18 +227,20 @@ const Game = () => {
       <div className="ui-overlay">
         {/* HUD */}
         <div className="hud">
-          <h3>{currentPlayer.name}</h3>
-          <div>⚡ Energy: {currentPlayer.energy}</div>
-          <div>🎯 Influence: {currentPlayer.influence}</div>
-          <div style={{ 
-            width: '20px', 
-            height: '20px', 
-            backgroundColor: currentPlayer.color,
-            borderRadius: '50%',
-            display: 'inline-block',
-            marginRight: '8px',
-            border: '2px solid white'
-          }}></div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+            <div style={{ 
+              width: '24px', 
+              height: '24px', 
+              backgroundColor: currentPlayer.color,
+              borderRadius: '50%',
+              border: '3px solid gold'
+            }}></div>
+            <h3 style={{ margin: 0 }}>{currentPlayer.name}</h3>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '14px' }}>
+            <div>⚡ {currentPlayer.energy}</div>
+            <div>🎯 {currentPlayer.influence}</div>
+          </div>
         </div>
 
         {/* Phase Indicator */}
@@ -257,18 +279,22 @@ const Game = () => {
           position: 'absolute',
           bottom: '20px',
           right: '20px',
-          background: 'rgba(0, 0, 0, 0.7)',
-          padding: '15px',
+          background: 'rgba(0, 0, 0, 0.85)',
+          padding: '12px 15px',
           borderRadius: '8px',
-          fontSize: '12px',
-          maxWidth: '200px'
+          fontSize: '11px',
+          maxWidth: '180px',
+          border: '1px solid rgba(255,255,255,0.2)'
         }}>
-          <h4>Controls</h4>
-          <div>WASD - Move</div>
-          <div>E - Harvest nexus</div>
-          <div>Space - Deploy beacon</div>
-          <div>Q - Boost nexus</div>
-          <div>Click - Attack/Move</div>
+          <h4 style={{ margin: '0 0 8px 0', color: '#ffd700' }}>⌨️ Controls</h4>
+          <div style={{ display: 'grid', gap: '4px' }}>
+            <div><span style={{color: '#4ecdc4'}}>WASD</span> - Move</div>
+            <div><span style={{color: '#4ecdc4'}}>E</span> - Harvest nexus</div>
+            <div><span style={{color: '#4ecdc4'}}>Space</span> - Deploy beacon</div>
+            <div><span style={{color: '#4ecdc4'}}>Q</span> - Boost nexus</div>
+            <div><span style={{color: '#4ecdc4'}}>F</span> - Attack nearest</div>
+            <div><span style={{color: '#4ecdc4'}}>Click</span> - Attack/Move</div>
+          </div>
         </div>
       </div>
 

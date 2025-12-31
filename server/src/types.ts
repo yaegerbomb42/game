@@ -79,7 +79,8 @@ export interface PlayerAction {
 
 export interface GameEvent {
   type: 'player-joined' | 'player-left' | 'nexus-captured' | 'energy-pulse' | 'game-started' | 'game-ended' | 
-        'player-attacked' | 'player-killed' | 'powerup-spawned' | 'powerup-collected' | 'achievement-unlocked';
+        'player-attacked' | 'player-killed' | 'powerup-spawned' | 'powerup-collected' | 'achievement-unlocked' |
+        'beacon-deployed' | 'phase-changed';
   data: any;
   timestamp: number;
 }
