@@ -9,7 +9,7 @@ const app = express();
 const server = createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: process.env.NODE_ENV === 'production' ? false : ['http://localhost:3000'],
+    origin: process.env.NODE_ENV === 'production' ? ['https://nexus-wars.vercel.app', 'http://localhost:3000'] : ['http://localhost:3000'],
     methods: ['GET', 'POST'],
   },
 });
@@ -46,8 +46,8 @@ io.on('connection', (socket) => {
   console.log(`Player connected: ${socket.id}`);
 
   // Join or create a game room
-  socket.on('join-room', (data: { roomId?: string; playerName: string }) => {
-    const { roomId, playerName } = data;
+  socket.on('join-room', (data: { roomId?: string; playerName: string; abilityType?: string }) => {
+    const { roomId, playerName, abilityType } = data;
     
     let room: GameRoom;
     let targetRoomId: string;
@@ -74,7 +74,12 @@ io.on('connection', (socket) => {
       });
     }
 
-    const abilities: Player['abilityType'][] = ['dash', 'heal', 'shield', 'scan'];
+    const validAbilities = ['dash', 'heal', 'shield', 'scan'];
+    // Default to random if invalid or not provided
+    const selectedAbility = (abilityType && validAbilities.includes(abilityType)) 
+      ? abilityType 
+      : validAbilities[room.getPlayerCount() % validAbilities.length];
+
     const player: Player = {
       id: socket.id,
       name: playerName,
@@ -113,8 +118,8 @@ io.on('connection', (socket) => {
       lastMovement: 0,
       // Respawn invincibility
       invincibleUntil: 0,
-      // Special ability - assign randomly for variety
-      abilityType: abilities[room.getPlayerCount() % abilities.length],
+      // Special ability
+      abilityType: selectedAbility as any,
       abilityCooldown: 15000, // 15 second cooldown
       lastAbilityUse: 0,
     };
@@ -128,7 +133,7 @@ io.on('connection', (socket) => {
       gameState: room.getSerializableGameState(),
     });
 
-    console.log(`Player ${playerName} joined room ${targetRoomId}`);
+    console.log(`Player ${playerName} joined room ${targetRoomId} with ability ${selectedAbility}`);
   });
 
   // Handle get game state request
