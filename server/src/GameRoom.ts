@@ -1029,6 +1029,10 @@ export class GameRoom extends EventEmitter {
     return this.roomId;
   }
 
+  getGamePhase(): GameState['gamePhase'] {
+    return this.gamePhase;
+  }
+
   // Allow restarting a game
   restartGame() {
     if (this.gamePhase !== 'ended') return;

@@ -15,5 +15,15 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          phaser: ['phaser'],
+          react: ['react', 'react-dom', 'react-router-dom'],
+          socketio: ['socket.io-client'],
+        },
+      },
+    },
+    chunkSizeWarningLimit: 600,
   },
 })

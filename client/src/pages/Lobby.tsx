@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { io, Socket } from 'socket.io-client'
 
@@ -19,6 +19,8 @@ interface AvailableRoom {
   roomId: string
   playerCount: number
   maxPlayers: number
+  gamePhase?: string
+  canJoin?: boolean
 }
 
 const ABILITY_INFO: Record<string, { icon: string; name: string; description: string }> = {
@@ -28,24 +30,53 @@ const ABILITY_INFO: Record<string, { icon: string; name: string; description: st
   scan: { icon: '👁️', name: 'Scan', description: 'Reveal all players and nexuses' },
 }
 
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001'
+
 const Lobby = () => {
   const [socket, setSocket] = useState<Socket | null>(null)
   const [playerName, setPlayerName] = useState(localStorage.getItem('playerName') || '')
   const [roomId, setRoomId] = useState('')
   const [roomState, setRoomState] = useState<RoomState | null>(null)
   const [isConnecting, setIsConnecting] = useState(false)
+  const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected')
   const [error, setError] = useState('')
   const [availableRooms, setAvailableRooms] = useState<AvailableRoom[]>([])
   const [showTutorial, setShowTutorial] = useState(false)
+  const [serverStats, setServerStats] = useState<{ rooms: number; totalPlayers: number } | null>(null)
+  const reconnectAttempts = useRef(0)
+  const maxReconnectAttempts = 5
   const navigate = useNavigate()
 
+  const fetchServerStats = useCallback(async () => {
+    try {
+      const response = await fetch(`${SERVER_URL}/health`)
+      const data = await response.json()
+      setServerStats({ rooms: data.rooms, totalPlayers: data.totalPlayers || 0 })
+    } catch (e) {
+      // Ignore
+    }
+  }, [])
+
   useEffect(() => {
-    const newSocket = io(import.meta.env.VITE_SERVER_URL || 'http://localhost:3001')
+    setConnectionStatus('connecting')
+    
+    const newSocket = io(SERVER_URL, {
+      transports: ['websocket', 'polling'],
+      timeout: 10000,
+      reconnection: true,
+      reconnectionAttempts: maxReconnectAttempts,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+    })
     setSocket(newSocket)
 
     newSocket.on('connect', () => {
       console.log('Connected to server')
+      setConnectionStatus('connected')
+      setError('')
+      reconnectAttempts.current = 0
       fetchAvailableRooms()
+      fetchServerStats()
     })
 
     newSocket.on('joined-room', (data) => {
@@ -103,35 +134,56 @@ const Lobby = () => {
       }
     })
 
-    newSocket.on('disconnect', () => {
+    newSocket.on('disconnect', (reason) => {
+      console.log('Disconnected:', reason)
+      setConnectionStatus('disconnected')
       setRoomState(null)
+      setIsConnecting(false)
+      if (reason === 'io server disconnect') {
+        // Server disconnected, try to reconnect
+        newSocket.connect()
+      }
+    })
+
+    newSocket.on('connect_error', (err) => {
+      console.error('Connection error:', err)
+      reconnectAttempts.current++
+      setConnectionStatus('disconnected')
+      if (reconnectAttempts.current >= maxReconnectAttempts) {
+        setError(`Unable to connect to server. Please check your connection and try again.`)
+      } else {
+        setError(`Connecting to server... (attempt ${reconnectAttempts.current}/${maxReconnectAttempts})`)
+      }
       setIsConnecting(false)
     })
 
-    newSocket.on('connect_error', () => {
-      setError('Failed to connect to server')
-      setIsConnecting(false)
+    newSocket.on('reconnect', (attemptNumber) => {
+      console.log('Reconnected after', attemptNumber, 'attempts')
+      setConnectionStatus('connected')
+      setError('')
     })
 
     // Fetch available rooms periodically
-    const interval = setInterval(fetchAvailableRooms, 5000)
+    const interval = setInterval(() => {
+      fetchAvailableRooms()
+      fetchServerStats()
+    }, 5000)
 
     return () => {
       newSocket.close()
       clearInterval(interval)
     }
-  }, [navigate])
+  }, [navigate, fetchServerStats])
 
-  const fetchAvailableRooms = async () => {
+  const fetchAvailableRooms = useCallback(async () => {
     try {
-      const serverUrl = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001'
-      const response = await fetch(`${serverUrl}/rooms`)
+      const response = await fetch(`${SERVER_URL}/rooms`)
       const data = await response.json()
       setAvailableRooms(data.rooms || [])
     } catch (e) {
       // Ignore fetch errors
     }
-  }
+  }, [])
 
   const handleCreateRoom = () => {
     if (!playerName.trim()) {
@@ -166,7 +218,7 @@ const Lobby = () => {
     })
   }
 
-  const handleQuickMatch = () => {
+  const handleQuickMatch = async () => {
     if (!playerName.trim()) {
       setError('Please enter your name')
       return
@@ -176,16 +228,32 @@ const Lobby = () => {
     setError('')
     localStorage.setItem('playerName', playerName.trim())
     
-    // Check for available rooms first
-    if (availableRooms.length > 0) {
-      const bestRoom = availableRooms.find(r => r.playerCount < 6) || availableRooms[0]
-      socket?.emit('join-room', { 
-        roomId: bestRoom.roomId, 
-        playerName: playerName.trim() 
-      })
-    } else {
-      // Create new room
-      socket?.emit('join-room', { playerName: playerName.trim() })
+    try {
+      // Use the quickjoin API endpoint for best room selection
+      const response = await fetch(`${SERVER_URL}/quickjoin`)
+      const data = await response.json()
+      
+      if (data.roomId) {
+        socket?.emit('join-room', { 
+          roomId: data.roomId, 
+          playerName: playerName.trim() 
+        })
+      } else {
+        // Fallback to socket-based quick match
+        socket?.emit('quick-match', { playerName: playerName.trim() })
+      }
+    } catch (e) {
+      // Fallback: check available rooms or create new
+      if (availableRooms.length > 0) {
+        const bestRoom = availableRooms.find(r => r.playerCount < 6 && r.canJoin !== false) || availableRooms[0]
+        socket?.emit('join-room', { 
+          roomId: bestRoom.roomId, 
+          playerName: playerName.trim() 
+        })
+      } else {
+        // Create new room
+        socket?.emit('join-room', { playerName: playerName.trim() })
+      }
     }
   }
 
@@ -274,17 +342,45 @@ const Lobby = () => {
     <div className="lobby-container">
       <div className="lobby-card" style={{ maxWidth: '600px' }}>
         <h1 style={{ fontSize: '2.5rem', marginBottom: '5px' }}>🎮 Nexus Wars</h1>
-        <p style={{ opacity: 0.8, marginBottom: '20px' }}>Fast-paced 2D multiplayer strategy</p>
+        <p style={{ opacity: 0.8, marginBottom: '10px' }}>Fast-paced 2D multiplayer strategy</p>
+        
+        {/* Connection Status */}
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'center',
+          gap: '8px',
+          marginBottom: '15px',
+          fontSize: '13px'
+        }}>
+          <div style={{
+            width: '10px',
+            height: '10px',
+            borderRadius: '50%',
+            background: connectionStatus === 'connected' ? '#27ae60' : 
+                       connectionStatus === 'connecting' ? '#f39c12' : '#e74c3c',
+            boxShadow: connectionStatus === 'connected' ? '0 0 10px #27ae60' : 'none'
+          }} />
+          <span style={{ opacity: 0.7 }}>
+            {connectionStatus === 'connected' ? 'Connected' : 
+             connectionStatus === 'connecting' ? 'Connecting...' : 'Disconnected'}
+          </span>
+          {serverStats && connectionStatus === 'connected' && (
+            <span style={{ opacity: 0.5, marginLeft: '10px' }}>
+              • {serverStats.totalPlayers} players online • {serverStats.rooms} rooms
+            </span>
+          )}
+        </div>
 
         {error && (
           <div style={{ 
-            background: 'rgba(231, 76, 60, 0.2)', 
+            background: error.includes('Connecting') ? 'rgba(243, 156, 18, 0.2)' : 'rgba(231, 76, 60, 0.2)', 
             padding: '12px', 
             borderRadius: '8px', 
             marginBottom: '15px',
-            border: '1px solid rgba(231, 76, 60, 0.5)'
+            border: `1px solid ${error.includes('Connecting') ? 'rgba(243, 156, 18, 0.5)' : 'rgba(231, 76, 60, 0.5)'}`
           }}>
-            ⚠️ {error}
+            {error.includes('Connecting') ? '🔄' : '⚠️'} {error}
           </div>
         )}
 
@@ -306,22 +402,26 @@ const Lobby = () => {
         <button 
           className="btn" 
           onClick={handleQuickMatch}
-          disabled={isConnecting || !playerName.trim()}
+          disabled={isConnecting || !playerName.trim() || connectionStatus !== 'connected'}
           style={{ 
             fontSize: '18px', 
             padding: '15px 30px',
-            background: 'linear-gradient(135deg, #27ae60, #2ecc71)',
-            marginBottom: '10px'
+            background: connectionStatus === 'connected' 
+              ? 'linear-gradient(135deg, #27ae60, #2ecc71)'
+              : 'linear-gradient(135deg, #7f8c8d, #95a5a6)',
+            marginBottom: '10px',
+            width: '100%'
           }}
         >
-          {isConnecting ? '🔄 Finding match...' : '⚡ Quick Match'}
+          {isConnecting ? '🔄 Finding match...' : 
+           connectionStatus !== 'connected' ? '⏳ Connecting...' : '⚡ Quick Match'}
         </button>
 
         <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
           <button 
             className="btn btn-secondary" 
             onClick={handleCreateRoom}
-            disabled={isConnecting || !playerName.trim()}
+            disabled={isConnecting || !playerName.trim() || connectionStatus !== 'connected'}
             style={{ flex: 1 }}
           >
             {isConnecting ? '🔄...' : '🆕 Create Room'}
@@ -333,27 +433,52 @@ const Lobby = () => {
           <div style={{ marginBottom: '20px' }}>
             <h4 style={{ marginBottom: '10px' }}>🌐 Active Games</h4>
             <div style={{ display: 'grid', gap: '8px' }}>
-              {availableRooms.slice(0, 3).map(room => (
-                <div key={room.roomId} style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  background: 'rgba(255,255,255,0.1)',
-                  padding: '10px 15px',
-                  borderRadius: '8px'
-                }}>
-                  <span>Room {room.roomId}</span>
-                  <span style={{ opacity: 0.7 }}>{room.playerCount}/{room.maxPlayers}</span>
-                  <button 
-                    className="btn btn-secondary"
-                    onClick={() => handleJoinRoom(room.roomId)}
-                    disabled={isConnecting}
-                    style={{ padding: '5px 15px', fontSize: '14px' }}
-                  >
-                    Join
-                  </button>
-                </div>
-              ))}
+              {availableRooms.slice(0, 5).map(room => {
+                const phaseColors: Record<string, string> = {
+                  waiting: '#27ae60',
+                  spawn: '#3498db',
+                  expansion: '#9b59b6',
+                  conflict: '#e74c3c',
+                  pulse: '#f39c12',
+                }
+                const phaseColor = phaseColors[room.gamePhase || 'waiting'] || '#95a5a6'
+                
+                return (
+                  <div key={room.roomId} style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    background: 'rgba(255,255,255,0.1)',
+                    padding: '10px 15px',
+                    borderRadius: '8px',
+                    borderLeft: `3px solid ${phaseColor}`
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span style={{ fontWeight: 'bold' }}>{room.roomId}</span>
+                      {room.gamePhase && (
+                        <span style={{ 
+                          fontSize: '11px', 
+                          padding: '2px 6px', 
+                          background: `${phaseColor}33`,
+                          borderRadius: '4px',
+                          color: phaseColor
+                        }}>
+                          {room.gamePhase === 'waiting' ? '⏳ Waiting' : `🎮 ${room.gamePhase}`}
+                        </span>
+                      )}
+                    </div>
+                    <span style={{ opacity: 0.7, fontSize: '14px' }}>{room.playerCount}/{room.maxPlayers}</span>
+                    <button 
+                      className="btn btn-secondary"
+                      onClick={() => handleJoinRoom(room.roomId)}
+                      disabled={isConnecting || connectionStatus !== 'connected' || room.canJoin === false}
+                      style={{ padding: '5px 15px', fontSize: '14px' }}
+                    >
+                      Join
+                    </button>
+                  </div>
+                )
+              })}
             </div>
           </div>
         )}
@@ -371,13 +496,13 @@ const Lobby = () => {
             onChange={(e) => setRoomId(e.target.value.toUpperCase())}
             placeholder="Room code"
             maxLength={6}
-            disabled={isConnecting}
+            disabled={isConnecting || connectionStatus !== 'connected'}
             style={{ flex: 1, fontSize: '16px', padding: '12px', textAlign: 'center', letterSpacing: '2px' }}
           />
           <button 
             className="btn btn-secondary" 
             onClick={() => handleJoinRoom()}
-            disabled={isConnecting || !playerName.trim() || !roomId.trim()}
+            disabled={isConnecting || !playerName.trim() || !roomId.trim() || connectionStatus !== 'connected'}
           >
             Join
           </button>
