@@ -86,7 +86,13 @@ const Game = () => {
     }
 
     const existingSocket = location.state?.socket
-    const socket = existingSocket || io(import.meta.env.VITE_SERVER_URL || 'http://localhost:3001')
+    const socket = existingSocket || io(import.meta.env.VITE_SERVER_URL || 'http://localhost:3001', {
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      reconnectionAttempts: 5,
+      transports: ['websocket', 'polling'],
+    })
     socketRef.current = socket
 
     if (!existingSocket) {

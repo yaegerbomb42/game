@@ -91,6 +91,10 @@ export class GameScene extends Phaser.Scene {
 
   // Visual effects queue
   private effectsQueue: Array<() => void> = []
+  
+  // Screen shake
+  private shakeIntensity = 0
+  private shakeDecay = 0.9
 
   constructor() {
     super({ key: 'GameScene' })
@@ -183,12 +187,29 @@ export class GameScene extends Phaser.Scene {
     this.handleMovement(delta)
     this.updatePlayerPosition(delta)
     this.updateAbilityIndicator()
+    this.updateScreenShake()
     
     // Process visual effects
     while (this.effectsQueue.length > 0) {
       const effect = this.effectsQueue.shift()
       if (effect) effect()
     }
+  }
+
+  private updateScreenShake() {
+    if (this.shakeIntensity > 0.1) {
+      const offsetX = (Math.random() - 0.5) * this.shakeIntensity
+      const offsetY = (Math.random() - 0.5) * this.shakeIntensity
+      this.cameras.main.setScroll(offsetX, offsetY)
+      this.shakeIntensity *= this.shakeDecay
+    } else {
+      this.shakeIntensity = 0
+      this.cameras.main.setScroll(0, 0)
+    }
+  }
+
+  private addScreenShake(intensity: number) {
+    this.shakeIntensity = Math.max(this.shakeIntensity, intensity)
   }
 
   private handleMovement(delta: number) {
@@ -767,20 +788,26 @@ export class GameScene extends Phaser.Scene {
     if (attacker && target) {
       this.createAttackEffect(attacker.x, attacker.y, target.x, target.y)
       
-      // Damage number
+      // Screen shake for attacks
+      if (data.attackerId === this.currentPlayer?.id || data.targetId === this.currentPlayer?.id) {
+        this.addScreenShake(data.damage * 0.15)
+      }
+      
+      // Damage number with color based on damage
+      const damageColor = data.damage > 40 ? '#ff0000' : data.damage > 25 ? '#ff4444' : '#ff8888'
       const damageText = this.add.text(target.x, target.y - 20, `-${data.damage}`, {
-        fontSize: '18px',
-        color: '#ff4444',
+        fontSize: data.damage > 40 ? '22px' : '18px',
+        color: damageColor,
         fontStyle: 'bold',
         stroke: '#000000',
-        strokeThickness: 3
+        strokeThickness: 4
       }).setOrigin(0.5)
       
       this.tweens.add({
         targets: damageText,
         y: target.y - 50,
         alpha: 0,
-        scale: 1.3,
+        scale: 1.5,
         duration: 800,
         ease: 'Power2',
         onComplete: () => damageText.destroy()
@@ -799,27 +826,42 @@ export class GameScene extends Phaser.Scene {
     if (victim) {
       this.createDeathEffect(victim.x, victim.y)
       
-      // Kill notification
+      // Screen shake for kills
+      if (data.killerId === this.currentPlayer?.id || data.victimId === this.currentPlayer?.id) {
+        this.addScreenShake(8)
+      }
+      
+      // Kill notification with enhanced visuals
+      const isMyKill = data.killerId === this.currentPlayer?.id
       const killText = this.add.text(400, 100, 
         `💀 ${data.killerName} eliminated ${data.victimName}!`, {
-        fontSize: '16px',
-        color: '#ff4444',
-        backgroundColor: 'rgba(0, 0, 0, 0.8)',
-        padding: { x: 15, y: 8 }
+        fontSize: isMyKill ? '18px' : '16px',
+        color: isMyKill ? '#ffd700' : '#ff4444',
+        backgroundColor: 'rgba(0, 0, 0, 0.9)',
+        padding: { x: 15, y: 10 },
+        fontStyle: isMyKill ? 'bold' : 'normal'
       }).setOrigin(0.5).setDepth(2000)
       
       this.tweens.add({
         targets: killText,
         y: 80,
         alpha: 0,
-        duration: 2500,
+        duration: 3000,
         ease: 'Power2',
         onComplete: () => killText.destroy()
       })
 
-      // Kill streak notification
+      // Kill streak notification with enhanced effects
       if (data.killStreak >= 3) {
         this.showAchievement(`${data.killerName}: ${data.killStreak} Kill Streak! 🔥`)
+        if (data.killerId === this.currentPlayer?.id) {
+          this.addScreenShake(4)
+        }
+      }
+      
+      // Mega kill for 5+ streak
+      if (data.killStreak >= 5) {
+        this.showAchievement(`${data.killerName}: UNSTOPPABLE! ⚡`)
       }
     }
   }
@@ -889,27 +931,48 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createAttackEffect(fromX: number, fromY: number, toX: number, toY: number) {
-    // Attack line
+    // Attack line with gradient effect
     const line = this.add.line(0, 0, fromX, fromY, toX, toY, 0xff4444, 1)
-    line.setLineWidth(4)
+    line.setLineWidth(5)
+    line.setDepth(100)
     
     this.tweens.add({
       targets: line,
       alpha: 0,
+      lineWidth: 2,
       duration: 150,
       onComplete: () => line.destroy()
     })
 
-    // Impact effect at target
-    const impact = this.add.circle(toX, toY, 5, 0xff4444)
-    this.tweens.add({
-      targets: impact,
-      scaleX: 3,
-      scaleY: 3,
-      alpha: 0,
-      duration: 200,
-      onComplete: () => impact.destroy()
-    })
+    // Multiple impact rings for better effect
+    for (let i = 0; i < 3; i++) {
+      const impact = this.add.circle(toX, toY, 5, 0xff4444, 0.8 - i * 0.2)
+      this.tweens.add({
+        targets: impact,
+        scaleX: 3 + i,
+        scaleY: 3 + i,
+        alpha: 0,
+        duration: 200 + i * 50,
+        delay: i * 30,
+        onComplete: () => impact.destroy()
+      })
+    }
+    
+    // Spark particles
+    for (let i = 0; i < 5; i++) {
+      const angle = (Math.PI * 2 * i) / 5
+      const spark = this.add.circle(toX, toY, 3, 0xffaa00)
+      this.tweens.add({
+        targets: spark,
+        x: toX + Math.cos(angle) * 30,
+        y: toY + Math.sin(angle) * 30,
+        alpha: 0,
+        scale: 0,
+        duration: 300,
+        ease: 'Power2',
+        onComplete: () => spark.destroy()
+      })
+    }
   }
 
   private createBeaconEffect(x: number, y: number) {
@@ -1027,22 +1090,41 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createDeathEffect(x: number, y: number) {
-    for (let i = 0; i < 20; i++) {
+    // Enhanced particle burst
+    for (let i = 0; i < 30; i++) {
       const angle = Math.random() * Math.PI * 2
-      const speed = 30 + Math.random() * 50
-      const particle = this.add.circle(x, y, 3 + Math.random() * 3, 0xff0000)
+      const speed = 40 + Math.random() * 60
+      const colors = [0xff0000, 0xff4444, 0xff6666, 0xffaa00]
+      const color = colors[Math.floor(Math.random() * colors.length)]
+      const particle = this.add.circle(x, y, 4 + Math.random() * 4, color)
+      particle.setDepth(150)
       
       this.tweens.add({
         targets: particle,
         x: x + Math.cos(angle) * speed,
-        y: y + Math.sin(angle) * speed,
+        y: y + Math.sin(angle) * speed - 20, // Add upward bias
         alpha: 0,
         scale: 0,
-        duration: 400 + Math.random() * 200,
-        ease: 'Power2',
+        duration: 500 + Math.random() * 300,
+        ease: 'Power3',
         onComplete: () => particle.destroy()
       })
     }
+    
+    // Shockwave effect
+    const shockwave = this.add.circle(x, y, 20, 0xff0000, 0)
+    shockwave.setStrokeStyle(5, 0xff0000, 0.8)
+    shockwave.setDepth(149)
+    
+    this.tweens.add({
+      targets: shockwave,
+      scaleX: 4,
+      scaleY: 4,
+      alpha: 0,
+      duration: 500,
+      ease: 'Power2',
+      onComplete: () => shockwave.destroy()
+    })
   }
 
   private createRespawnEffect(x: number, y: number) {

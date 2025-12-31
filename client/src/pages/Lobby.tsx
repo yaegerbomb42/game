@@ -40,12 +40,34 @@ const Lobby = () => {
   const navigate = useNavigate()
 
   useEffect(() => {
-    const newSocket = io(import.meta.env.VITE_SERVER_URL || 'http://localhost:3001')
+    const newSocket = io(import.meta.env.VITE_SERVER_URL || 'http://localhost:3001', {
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      reconnectionAttempts: 5,
+      transports: ['websocket', 'polling'],
+    })
     setSocket(newSocket)
 
     newSocket.on('connect', () => {
       console.log('Connected to server')
       fetchAvailableRooms()
+      
+      // Try to reconnect to previous room if exists
+      const previousRoomId = sessionStorage.getItem('currentRoomId')
+      const previousPlayerId = sessionStorage.getItem('currentPlayerId')
+      if (previousRoomId && previousPlayerId) {
+        newSocket.emit('reconnect-attempt', { playerId: previousPlayerId, roomId: previousRoomId })
+      }
+    })
+
+    newSocket.on('reconnected', (data) => {
+      console.log('Reconnected successfully!')
+      setRoomState({
+        roomId: data.gameState.roomId,
+        players: Object.values(data.gameState.players),
+        gamePhase: data.gameState.gamePhase
+      })
     })
 
     newSocket.on('joined-room', (data) => {
@@ -55,6 +77,10 @@ const Lobby = () => {
         gamePhase: data.gameState.gamePhase
       })
       setIsConnecting(false)
+      
+      // Store for reconnection
+      sessionStorage.setItem('currentRoomId', data.roomId)
+      sessionStorage.setItem('currentPlayerId', data.player.id)
     })
 
     newSocket.on('room-full', () => {

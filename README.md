@@ -85,43 +85,74 @@ nexus-wars/
 
 ## 🚀 Deployment
 
-### Environment Variables
+### Quick Deploy Options
 
-Create `.env` files for production:
+#### Option 1: Vercel (Frontend) + Railway (Backend) [Recommended]
+Best for production multiplayer with WebSocket support.
 
-**Client (.env)**
-```
-VITE_SERVER_URL=https://your-server-domain.com
+**Backend (Railway):**
+```bash
+# Install Railway CLI
+npm i -g @railway/cli
+
+# Login and deploy
+railway login
+cd server && railway up
 ```
 
-**Server (.env)**
-```
-PORT=3001
-NODE_ENV=production
+**Frontend (Vercel):**
+```bash
+# Install Vercel CLI
+npm i -g vercel
+
+# Deploy
+cd client && vercel --prod
 ```
 
-### Build for Production
+Set environment variable `VITE_SERVER_URL` to your Railway backend URL.
+
+#### Option 2: All-in-One Vercel
+Suitable for testing, but WebSocket performance may be limited.
 
 ```bash
-# Build both client and server
-npm run build
-
-# Start production server
-npm start
+# Deploy from root
+vercel --prod
 ```
 
-### Docker Deployment
-
+#### Option 3: Docker Deployment
 ```bash
 # Build and run with Docker Compose
 docker-compose up --build
 ```
 
+### Environment Variables
+
+**Client (.env)**
+```bash
+VITE_SERVER_URL=https://your-server-domain.com
+```
+
+**Server (.env)**
+```bash
+PORT=3001
+NODE_ENV=production
+ALLOWED_ORIGINS=https://your-frontend-domain.com
+```
+
+### Detailed Deployment Guide
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for comprehensive deployment instructions including:
+- Step-by-step Vercel setup
+- Railway.app configuration
+- WebSocket optimization
+- Production monitoring
+- Troubleshooting guide
+
 ### Recommended Hosting
 
-- **Frontend**: Vercel, Netlify, or any static hosting
-- **Backend**: Railway, Render, Fly.io, or any Node.js hosting
-- **Database**: Redis (for session management in production)
+- **Frontend**: Vercel ⭐, Netlify, Cloudflare Pages
+- **Backend**: Railway ⭐, Render, Fly.io, Heroku
+- **Why Railway for Backend?**: Better WebSocket support, no cold starts, real-time multiplayer ready
 
 ## 🎮 Game Mechanics
 

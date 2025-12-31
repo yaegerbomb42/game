@@ -10,13 +10,28 @@ const cors_1 = __importDefault(require("cors"));
 const GameRoom_1 = require("./GameRoom");
 const app = (0, express_1.default)();
 const server = (0, http_1.createServer)(app);
+// Configure CORS based on environment
+const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'];
 const io = new socket_io_1.Server(server, {
     cors: {
-        origin: process.env.NODE_ENV === 'production' ? false : ['http://localhost:3000'],
+        origin: process.env.NODE_ENV === 'production'
+            ? allowedOrigins
+            : ['http://localhost:3000', 'http://localhost:5173'],
         methods: ['GET', 'POST'],
+        credentials: true,
     },
+    // Better settings for production
+    pingTimeout: 60000,
+    pingInterval: 25000,
+    upgradeTimeout: 30000,
+    transports: ['websocket', 'polling'],
 });
-app.use((0, cors_1.default)());
+app.use((0, cors_1.default)({
+    origin: process.env.NODE_ENV === 'production'
+        ? allowedOrigins
+        : ['http://localhost:3000', 'http://localhost:5173'],
+    credentials: true,
+}));
 app.use(express_1.default.json());
 // Store active game rooms
 const gameRooms = new Map();
@@ -170,12 +185,40 @@ io.on('connection', (socket) => {
             room.restartGame();
         }
     });
-    // Handle disconnection
+    // Handle disconnection with grace period for reconnection
     socket.on('disconnect', () => {
         console.log(`Player disconnected: ${socket.id}`);
         const room = findPlayerRoom(socket.id);
         if (room) {
-            room.removePlayer(socket.id);
+            // Store player data for potential reconnection
+            const player = room.getPlayer(socket.id);
+            if (player) {
+                // Give player 30 seconds to reconnect before removal
+                setTimeout(() => {
+                    // Check if player is still disconnected
+                    const currentRoom = findPlayerRoom(socket.id);
+                    if (currentRoom && !socket.connected) {
+                        currentRoom.removePlayer(socket.id);
+                    }
+                }, 30000);
+            }
+            else {
+                room.removePlayer(socket.id);
+            }
+        }
+    });
+    // Handle reconnection attempts
+    socket.on('reconnect-attempt', (data) => {
+        const room = gameRooms.get(data.roomId);
+        if (room && room.hasPlayer(data.playerId)) {
+            const player = room.getPlayer(data.playerId);
+            if (player) {
+                // Update socket reference
+                socket.emit('reconnected', {
+                    player,
+                    gameState: room.getSerializableGameState(),
+                });
+            }
         }
     });
 });
