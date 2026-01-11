@@ -33,7 +33,18 @@ async function runBotTest() {
         await new Promise(resolve => setTimeout(resolve, 500));
 
         console.log(`Requesting to add bot to ${connectedRoomId}...`);
+        // Add a bot
+        console.log('Adding bot...');
         client.emit('add-bot', connectedRoomId);
+
+        // Toggle ready for our main client
+        await new Promise(resolve => {
+            setTimeout(() => {
+                console.log('Toggling ready...');
+                client.emit('toggle-ready', connectedRoomId);
+                resolve();
+            }, 500);
+        });
 
         console.log('Waiting for game start...');
         await new Promise((resolve, reject) => {

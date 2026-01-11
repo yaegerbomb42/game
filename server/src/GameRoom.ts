@@ -22,6 +22,8 @@ export class GameRoom extends EventEmitter {
   private gameLoop: NodeJS.Timeout | null = null;
   private broadcastLoop: NodeJS.Timeout | null = null;
   private powerUpSpawnTimer: NodeJS.Timeout | null = null;
+  private lobbyTimer: NodeJS.Timeout | null = null;
+  private lobbyTimerStart: number = 0;
   private matchNumber = 0;
 
   constructor(roomId: string, io: Server) {
@@ -112,10 +114,67 @@ export class GameRoom extends EventEmitter {
       gameState: this.getSerializableGameState(),
     });
 
-    // Start game if we have enough players
+    // Check start condition
     console.log(`[GameRoom] Checking start condition: players=${this.players.size}, phase=${this.gamePhase}`);
-    if (this.players.size >= 2 && this.gamePhase === 'waiting') {
-      console.log('[GameRoom] Starting game...');
+
+    // Stop timer if everyone left (down to 1 player)
+    if (this.players.size < 2 && this.lobbyTimer) {
+      clearInterval(this.lobbyTimer);
+      this.lobbyTimer = null;
+      this.lobbyTimerStart = 0;
+      this.broadcastEvent({
+        type: 'timer-cancelled',
+        data: {},
+        timestamp: Date.now()
+      });
+    }
+
+    // Start timer if we have 2+ players and no timer running
+    if (this.players.size >= 2 && this.gamePhase === 'waiting' && !this.lobbyTimer) {
+      this.startLobbyTimer();
+    }
+  }
+
+  private startLobbyTimer() {
+    console.log('[GameRoom] Starting lobby timer 60s');
+    this.lobbyTimerStart = Date.now();
+
+    this.broadcastEvent({
+      type: 'timer-started',
+      data: { startTime: this.lobbyTimerStart, duration: 60000 },
+      timestamp: Date.now(),
+    });
+
+    this.lobbyTimer = setInterval(() => {
+      const elapsed = Date.now() - this.lobbyTimerStart;
+      if (elapsed >= 60000) {
+        this.startGame();
+      }
+    }, 1000); // Check every second
+  }
+
+  toggleReady(playerId: string) {
+    const player = this.players.get(playerId);
+    if (!player) return;
+
+    player.isReady = !player.isReady;
+
+    this.broadcastEvent({
+      type: 'player-ready',
+      data: { playerId, isReady: player.isReady },
+      timestamp: Date.now(),
+    });
+
+    this.checkReadyStart();
+  }
+
+  public checkReadyStart() {
+    if (this.players.size < 2) return;
+
+    const allReady = Array.from(this.players.values()).every(p => p.isReady);
+
+    if (allReady) {
+      console.log('[GameRoom] All players ready! Starting immediately.');
       this.startGame();
     }
   }
@@ -655,6 +714,11 @@ export class GameRoom extends EventEmitter {
     this.gameStartTime = Date.now();
     this.phaseStartTime = Date.now();
     this.matchNumber++;
+
+    if (this.lobbyTimer) {
+      clearInterval(this.lobbyTimer);
+      this.lobbyTimer = null;
+    }
 
     this.broadcastEvent({
       type: 'game-started',

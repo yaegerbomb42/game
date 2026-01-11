@@ -241,12 +241,10 @@ const Game = () => {
       <div className="ui-overlay">
         {/* Player Stats HUD */}
         <div className="hud-panel hud-stats">
-          <div className="flex-gap" style={{ alignItems: 'center', marginBottom: '10px' }}>
+          <div className="flex-gap flex-item-center">
             <div
-              className="player-list-item-content"
+              className="player-list-item-content avatar-large"
               style={{
-                width: '40px',
-                height: '40px',
                 backgroundColor: currentPlayer.color,
                 boxShadow: `0 0 10px ${currentPlayer.color}`
               }}
@@ -305,7 +303,7 @@ const Game = () => {
         </div>
 
         {/* Mini Player List */}
-        <div className="hud-panel leaderboard">
+        <div className="hud-panel leaderboard border-bottom-none">
           <div className="text-small text-dim leaderboard-header">
             AGENTS ACTIVE ({Object.keys(gameState.players).length})
           </div>
@@ -313,18 +311,15 @@ const Game = () => {
             .sort((a, b) => b.score - a.score)
             .slice(0, 5)
             .map((player, idx) => (
-              <div key={player.id} className="player-list-item" style={{ opacity: player.isAlive ? 1 : 0.5 }}>
+              <div key={player.id} className={`player-list-item ${!player.isAlive ? 'player-dead' : ''}`}>
                 <span className="rank">{idx === 0 ? '1' : idx === 1 ? '2' : idx === 2 ? '3' : idx + 1}</span>
                 <div
-                  className="player-list-item-content"
+                  className="player-list-item-content player-avatar-small"
                   style={{
                     backgroundColor: player.color,
                     boxShadow: `0 0 5px ${player.color}`
                   }} />
-                <span className="name" style={{
-                  fontWeight: player.id === currentPlayer.id ? 'bold' : 'normal',
-                  color: player.id === currentPlayer.id ? 'var(--primary)' : 'inherit'
-                }}>
+                <span className={`name ${player.id === currentPlayer.id ? 'text-highlight' : ''}`}>
                   {player.name}
                 </span>
                 <span className="score">{Math.floor(player.score)}</span>
@@ -367,9 +362,7 @@ const Game = () => {
                 }}>
                   🏆
                 </div>
-                <h3 className="winner-name" style={{
-                  color: gameOverData.winner.id === currentPlayer.id ? 'var(--primary)' : 'white'
-                }}>
+                <h3 className={`winner-name status-text-bold ${gameOverData.winner.id === currentPlayer.id ? 'text-highlight' : ''}`} style={{ color: gameOverData.winner.id !== currentPlayer.id ? 'white' : undefined }}>
                   {gameOverData.winner.name} WINS
                 </h3>
                 {gameOverData.winner.id === currentPlayer.id && (
@@ -389,14 +382,11 @@ const Game = () => {
               </div>
               <div className="game-list scoreboard-list">
                 {gameOverData.finalScores.map((score, index) => (
-                  <div key={score.id} className="room-list-item" style={{
-                    background: score.id === currentPlayer.id ? 'rgba(0, 242, 255, 0.1)' : 'transparent',
-                    border: score.id === currentPlayer.id ? '1px solid var(--primary)' : 'none'
-                  }}>
+                  <div key={score.id} className={`room-list-item ${score.id === currentPlayer.id ? 'score-item-active' : ''}`}>
                     <span className="score-item-rank">
                       {index + 1}
                     </span>
-                    <span className="score-item-name" style={{ fontWeight: score.id === currentPlayer.id ? 'bold' : 'normal', color: score.id === currentPlayer.id ? 'var(--primary)' : 'inherit' }}>
+                    <span className={`score-item-name ${score.id === currentPlayer.id ? 'text-highlight' : ''}`}>
                       {score.name}
                     </span>
                     <span className="score-item-value">{Math.floor(score.score)}</span>
@@ -420,7 +410,7 @@ const Game = () => {
               <div className="detailed-stats-panel">
                 {gameOverData.finalScores.slice(0, 5).map(score => (
                   <div key={score.id} className="stat-row">
-                    <div className="stat-row-name" style={{ color: score.id === currentPlayer.id ? 'var(--primary)' : 'inherit' }}>{score.name}</div>
+                    <div className={`stat-row-name ${score.id === currentPlayer.id ? 'text-highlight' : ''}`}>{score.name}</div>
                     <div className="stat-row-details">
                       <div>🎯 INF: {Math.floor(score.influence)}</div>
                       <div>⚔️ DMG: {Math.floor(score.damageDealt)}</div>

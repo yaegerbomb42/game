@@ -7,6 +7,7 @@ interface Player {
   name: string
   color: string
   abilityType: string
+  isReady?: boolean
 }
 
 interface RoomState {
@@ -33,6 +34,9 @@ const Lobby = () => {
   const [playerName, setPlayerName] = useState(localStorage.getItem('playerName') || '')
   const [roomId, setRoomId] = useState('')
   const [selectedAbility, setSelectedAbility] = useState('dash')
+  const [timer, setTimer] = useState<number | null>(null)
+  const [isReady, setIsReady] = useState(false)
+
   const [roomState, setRoomState] = useState<RoomState | null>(null)
   const [isConnecting, setIsConnecting] = useState(false)
   const [error, setError] = useState('')
@@ -55,7 +59,6 @@ const Lobby = () => {
     setSocket(newSocket)
 
     newSocket.on('connect', () => {
-      console.log('Connected to server')
       fetchAvailableRooms()
     })
 
@@ -80,9 +83,40 @@ const Lobby = () => {
       setIsConnecting(false)
     })
 
+    // Timer events
     newSocket.on('game-event', (event) => {
-      if (event.type === 'player-joined' || event.type === 'player-left') {
-        // Handled by game-state-update
+      if (event.type === 'timer-started') {
+        const endTime = event.data.startTime + event.data.duration;
+        const updateTimer = () => {
+          const remaining = Math.max(0, Math.ceil((endTime - Date.now()) / 1000));
+          setTimer(remaining);
+          if (remaining <= 0) {
+            setTimer(null);
+          }
+        };
+        updateTimer();
+        // Set interval and declare as void/any if strict type checking complains about NodeJS.Timeout vs number
+        const timerInterval = setInterval(updateTimer, 1000);
+
+        // Store interval clean up if needed, but for now relying on component unmount or next event
+        return () => clearInterval(timerInterval);
+      } else if (event.type === 'timer-cancelled') {
+        setTimer(null);
+      } else if (event.type === 'player-ready') {
+        setRoomState(prev => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            players: prev.players.map(p =>
+              p.id === event.data.playerId ? { ...p, isReady: event.data.isReady } : p
+            )
+          };
+        });
+
+        // Update local ready state if it's us
+        if (socketRef.current && event.data.playerId === socketRef.current.id) {
+          setIsReady(event.data.isReady);
+        }
       } else if (event.type === 'game-started') {
         const currentRoomState = roomStateRef.current
         const currentSocket = socketRef.current
@@ -236,10 +270,18 @@ const Lobby = () => {
     }
   }
 
+  const handleToggleReady = () => {
+    if (roomState && socket) {
+      socket.emit('toggle-ready', roomState.roomId);
+    }
+  }
+
   const handleLeaveRoom = () => {
     socket?.disconnect()
     socket?.connect()
     setRoomState(null)
+    setTimer(null)
+    setIsReady(false)
   }
 
   const copyRoomId = () => {
@@ -269,14 +311,18 @@ const Lobby = () => {
             <div className="game-list">
               {roomState.players.map((player) => {
                 const ability = ABILITY_INFO[player.abilityType] || ABILITY_INFO.dash
+                const isPlayerReady = player.isReady;
                 return (
                   <div key={player.id} className="room-list-item">
-                    <div className="player-item-content">
+                    <div className="player-item-content player-item-wrapper">
                       <div
                         className="player-avatar"
                         style={{ backgroundColor: player.color, boxShadow: `0 0 10px ${player.color}` }}
                       />
                       <span className="player-name">{player.name}</span>
+                      <span className="text-small" style={{ color: isPlayerReady ? 'var(--success)' : 'var(--text-dim)', fontWeight: 'bold', marginRight: '10px' }}>
+                        {isPlayerReady ? 'READY' : 'WAITING'}
+                      </span>
                       <span className="text-small text-primary">
                         {ability.icon} {ability.name}
                       </span>
@@ -289,15 +335,28 @@ const Lobby = () => {
 
           <div className={`system-status ${roomState.players.length >= 2 ? 'status-ready' : 'status-waiting'}`}>
             <h3 className={`status-text ${roomState.players.length >= 2 ? 'text-success' : ''}`}>
-              {roomState.gamePhase === 'waiting'
-                ? roomState.players.length >= 2
-                  ? 'SYSTEM READY'
-                  : 'AWAITING AGENTS...'
-                : 'CONFLICT IN PROGRESS'
+              {timer !== null
+                ? `AUTO-START IN ${timer}s`
+                : roomState.gamePhase === 'waiting'
+                  ? roomState.players.length >= 2
+                    ? 'WAITING FOR READY SIGNAL...'
+                    : 'AWAITING AGENTS...'
+                  : 'CONFLICT IN PROGRESS'
               }
             </h3>
             {roomState.players.length < 2 && (
               <p className="text-dim text-small min-players-text">MINIMUM 2 AGENTS REQUIRED</p>
+            )}
+
+            {roomState.players.length >= 2 && (
+              <div className="mt-4">
+                <button
+                  className={`btn ${isReady ? 'btn-secondary' : 'btn-primary'}`}
+                  onClick={handleToggleReady}
+                >
+                  {isReady ? 'CANCEL READY' : 'READY TO DEPLOY'}
+                </button>
+              </div>
             )}
           </div>
 

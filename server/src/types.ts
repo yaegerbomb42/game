@@ -13,6 +13,7 @@ export interface Player {
   color: string;
   isAlive: boolean;
   isConnected: boolean; // Track connection status
+  isReady?: boolean; // Track if player is ready
   lastAction: number;
   // Combat properties
   health: number;
@@ -120,7 +121,8 @@ export interface PlayerAction {
 export interface GameEvent {
   type: 'player-joined' | 'player-left' | 'player-reconnected' | 'nexus-captured' | 'energy-pulse' | 'game-started' | 'game-ended' |
   'player-attacked' | 'player-killed' | 'powerup-spawned' | 'powerup-collected' | 'achievement-unlocked' |
-  'beacon-deployed' | 'attack-blocked' | 'player-respawned' | 'ability-used' | 'phase-changed';
+  'beacon-deployed' | 'attack-blocked' | 'player-respawned' | 'ability-used' | 'phase-changed' |
+  'timer-started' | 'timer-cancelled' | 'player-ready';
   data: any;
   timestamp: number;
 }

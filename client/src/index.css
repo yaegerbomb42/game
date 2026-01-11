@@ -89,6 +89,7 @@ h6 {
 .hud-panel {
   background: var(--bg-panel);
   border: 1px solid var(--glass-border);
+  -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
   border-radius: 8px;
   padding: 15px;
@@ -172,6 +173,7 @@ h6 {
 
 .lobby-card {
   background: rgba(10, 20, 30, 0.8);
+  -webkit-backdrop-filter: blur(20px);
   backdrop-filter: blur(20px);
   border: 1px solid var(--glass-border);
   border-radius: 16px;
@@ -188,8 +190,8 @@ h6 {
   text-align: center;
   margin-bottom: 0.5rem;
   background: linear-gradient(180deg, #fff 0%, #00f2ff 100%);
+  background-clip: text;
   -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
   filter: drop-shadow(0 0 10px rgba(0, 242, 255, 0.5));
 }
 
@@ -386,6 +388,7 @@ kbd {
   align-items: center;
   justify-content: center;
   z-index: 3000;
+  -webkit-backdrop-filter: blur(5px);
   backdrop-filter: blur(5px);
 }
 
@@ -802,8 +805,53 @@ kbd {
   text-transform: uppercase;
 }
 
+/* New Utility Classes for lint fixes */
+.flex-item-center {
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.avatar-large {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid white;
+}
+
+.border-bottom-none {
+  border-bottom: none;
+}
+
+.status-text-bold {
+  font-weight: bold;
+}
+
+.player-item-wrapper {
+  align-items: center;
+  width: 100%;
+}
+
+.player-avatar-small {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid white;
+}
+
+.flex-1-bold {
+  flex: 1;
+  font-weight: bold;
+}
+
+.copy-btn-style {
+  width: auto;
+  padding: 8px 20px;
+}
+
 .detailed-stats-panel {
   background: rgba(0, 0, 0, 0.3);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
   padding: 15px;
   border-radius: 8px;
   margin-bottom: 20px;

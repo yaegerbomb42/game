@@ -244,6 +244,7 @@ io.on('connection', (socket) => {
       color: '#ff0055', // Bot is always secondary/reddish
       isAlive: true,
       isConnected: true,
+      isReady: true, // Bot is always ready
       lastAction: Date.now(),
       health: 100,
       maxHealth: 100,
@@ -284,6 +285,17 @@ io.on('connection', (socket) => {
 
     room.addPlayer(mockSocket, botPlayer);
     console.log(`[Server] Added bot ${botName} to room ${roomId}`);
+
+    // Check if ready trigger needed (bot is ready)
+    room.checkReadyStart();
+  });
+
+  // Toggle ready status
+  socket.on('toggle-ready', (roomId: string) => {
+    const room = gameRooms.get(normalizeRoomId(roomId));
+    if (room) {
+      room.toggleReady(socket.id);
+    }
   });
 
   // Handle get game state request
