@@ -147,7 +147,7 @@ export class GameScene extends Phaser.Scene {
     // Phase indicator
     this.phaseText = this.add.text(400, 10, '', {
       fontSize: '16px',
-      color: '#ffd700',
+      color: GameScene.COLOR_SUCCESS,
       backgroundColor: 'rgba(0,0,0,0.8)',
       padding: { x: 15, y: 8 }
     }).setScrollFactor(0).setDepth(1000).setOrigin(0.5, 0)
@@ -549,7 +549,7 @@ export class GameScene extends Phaser.Scene {
         this.createBeaconEffect(event.data.x, event.data.y)
         break
       case 'phase-changed':
-        this.showNotification(`Phase: ${event.data.newPhase.toUpperCase()}`, '#ffd700')
+        this.showNotification(`Phase: ${event.data.newPhase.toUpperCase()}`, GameScene.COLOR_SUCCESS)
         break
     }
   }
