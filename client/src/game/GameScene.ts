@@ -134,12 +134,27 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createUI() {
-    // Leaderboard
+    // Background pattern for visual appeal
+    const bgPattern = this.add.graphics()
+    bgPattern.fillStyle(0x000000, 0.3)
+    for (let x = 0; x < 800; x += 40) {
+      for (let y = 0; y < 600; y += 40) {
+        if ((x + y) % 80 === 0) {
+          bgPattern.fillRect(x, y, 20, 20)
+        }
+      }
+    }
+    bgPattern.setScrollFactor(0).setDepth(0)
+    
+    // Leaderboard with better styling
     this.leaderboardText = this.add.text(10, 10, '', {
       fontSize: '13px',
       color: '#ffffff',
-      backgroundColor: 'rgba(0, 0, 0, 0.7)',
-      padding: { x: 10, y: 8 }
+      backgroundColor: 'rgba(0, 0, 0, 0.75)',
+      padding: { x: 10, y: 8 },
+      fontFamily: 'Arial',
+      stroke: '#000000',
+      strokeThickness: 1
     }).setScrollFactor(0).setDepth(1000)
 
     // Combo counter
@@ -184,17 +199,35 @@ export class GameScene extends Phaser.Scene {
   update(_time: number, delta: number) {
     if (!this.currentPlayer || !this.gameState) return
     
+    // Throttle expensive operations
+    const now = Date.now()
+    if (!this.lastUpdate) this.lastUpdate = now
+    const timeSinceLastUpdate = now - this.lastUpdate
+    
+    // Update movement every frame for responsiveness
     this.handleMovement(delta)
     this.updatePlayerPosition(delta)
     this.updateAbilityIndicator()
     this.updateScreenShake()
     
-    // Process visual effects
-    while (this.effectsQueue.length > 0) {
+    // Process visual effects (limit to prevent lag)
+    let effectsProcessed = 0
+    while (this.effectsQueue.length > 0 && effectsProcessed < 3) {
       const effect = this.effectsQueue.shift()
-      if (effect) effect()
+      if (effect) {
+        effect()
+        effectsProcessed++
+      }
+    }
+    
+    // Update expensive visuals less frequently
+    if (timeSinceLastUpdate > 50) { // Every ~50ms instead of every frame
+      this.renderInfluenceMap()
+      this.lastUpdate = now
     }
   }
+  
+  private lastUpdate: number = 0
 
   private updateScreenShake() {
     if (this.shakeIntensity > 0.1) {
@@ -390,11 +423,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   private renderGameState() {
-    this.renderInfluenceMap()
+    // Only render expensive operations when needed
     this.renderNexuses()
     this.renderPlayers()
     this.renderPowerUps()
     this.renderLeaderboard()
+    // Influence map is rendered separately in update loop for performance
   }
 
   private renderInfluenceMap() {
@@ -402,23 +436,36 @@ export class GameScene extends Phaser.Scene {
     
     const players = Object.values(this.gameState.players)
     players.forEach(player => {
-      if (player.influence > 0) {
+      if (player.influence > 0 && player.isAlive) {
         const radius = Math.min(player.influence * 1.5, 80)
         const color = Phaser.Display.Color.HexStringToColor(player.color).color
-        this.influenceGraphics.fillStyle(color, 0.08)
+        // Enhanced visual with pulsing effect
+        this.influenceGraphics.fillStyle(color, 0.12)
         this.influenceGraphics.fillCircle(player.x, player.y, radius)
+        
+        // Pulsing inner circle
+        const pulse = Math.sin(Date.now() / 1000) * 0.02 + 0.98
+        this.influenceGraphics.fillStyle(color, 0.06 * pulse)
+        this.influenceGraphics.fillCircle(player.x, player.y, radius * 0.7)
       }
     })
 
-    // Draw nexus influence zones
+    // Draw nexus influence zones with better visuals
     this.gameState.nexuses.forEach(nexus => {
       if (nexus.controlledBy) {
         const player = this.gameState.players[nexus.controlledBy]
         if (player) {
           const color = Phaser.Display.Color.HexStringToColor(player.color).color
-          this.influenceGraphics.lineStyle(2, color, 0.3)
+          // Multiple rings for better visibility
+          this.influenceGraphics.lineStyle(3, color, 0.4)
           this.influenceGraphics.strokeCircle(nexus.x, nexus.y, 70)
+          this.influenceGraphics.lineStyle(2, color, 0.2)
+          this.influenceGraphics.strokeCircle(nexus.x, nexus.y, 90)
         }
+      } else if (nexus.isContested) {
+        // Show contested state
+        this.influenceGraphics.lineStyle(2, 0xff4444, 0.5)
+        this.influenceGraphics.strokeCircle(nexus.x, nexus.y, 70)
       }
     })
   }
@@ -600,10 +647,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updatePlayerSprite(container: Phaser.GameObjects.Container, player: Player) {
-    // Smooth position interpolation
-    const lerpFactor = 0.3
-    container.x = Phaser.Math.Linear(container.x, player.x, lerpFactor)
-    container.y = Phaser.Math.Linear(container.y, player.y, lerpFactor)
+    // Smooth position interpolation with better performance
+    const lerpFactor = 0.35 // Slightly faster for better responsiveness
+    const distance = Phaser.Math.Distance.Between(container.x, container.y, player.x, player.y)
+    
+    // Use different lerp factors based on distance for smoother movement
+    const adaptiveLerp = distance > 50 ? lerpFactor * 1.5 : lerpFactor
+    container.x = Phaser.Math.Linear(container.x, player.x, adaptiveLerp)
+    container.y = Phaser.Math.Linear(container.y, player.y, adaptiveLerp)
     
     const healthFill = container.getData('healthFill') as Phaser.GameObjects.Rectangle
     const killStreakBadge = container.getData('killStreakBadge') as Phaser.GameObjects.Text
@@ -1035,33 +1086,43 @@ export class GameScene extends Phaser.Scene {
     const nexus = this.gameState.nexuses.find(n => n.id === nexusId)
     if (!nexus) return
     
-    // Burst of particles
-    for (let i = 0; i < 16; i++) {
-      const angle = (i / 16) * Math.PI * 2
-      const particle = this.add.circle(nexus.x, nexus.y, 5, 0xffd700)
+    const controllingPlayer = nexus.controlledBy ? this.gameState.players[nexus.controlledBy] : null
+    const color = controllingPlayer ? Phaser.Display.Color.HexStringToColor(controllingPlayer.color).color : 0xffd700
+    
+    // Enhanced burst of particles with color matching
+    for (let i = 0; i < 24; i++) {
+      const angle = (i / 24) * Math.PI * 2
+      const particle = this.add.circle(nexus.x, nexus.y, 4 + Math.random() * 3, color)
       
       this.tweens.add({
         targets: particle,
-        x: nexus.x + Math.cos(angle) * 60,
-        y: nexus.y + Math.sin(angle) * 60,
+        x: nexus.x + Math.cos(angle) * (60 + Math.random() * 40),
+        y: nexus.y + Math.sin(angle) * (60 + Math.random() * 40),
         alpha: 0,
         scale: 0,
-        duration: 600,
+        duration: 600 + Math.random() * 200,
         ease: 'Power2',
         onComplete: () => particle.destroy()
       })
     }
 
-    // Flash effect
-    const flash = this.add.circle(nexus.x, nexus.y, 30, 0xffd700, 0.8)
-    this.tweens.add({
-      targets: flash,
-      scaleX: 2,
-      scaleY: 2,
-      alpha: 0,
-      duration: 400,
-      onComplete: () => flash.destroy()
-    })
+    // Multi-layered flash effect
+    for (let layer = 0; layer < 3; layer++) {
+      const flash = this.add.circle(nexus.x, nexus.y, 30 + layer * 10, color, 0.6 - layer * 0.2)
+      this.tweens.add({
+        targets: flash,
+        scaleX: 2.5 + layer * 0.5,
+        scaleY: 2.5 + layer * 0.5,
+        alpha: 0,
+        duration: 400 + layer * 100,
+        delay: layer * 50,
+        ease: 'Power2',
+        onComplete: () => flash.destroy()
+      })
+    }
+    
+    // Screen shake effect
+    this.cameras.main.shake(200, 0.01)
   }
 
   private createPulseEffect() {

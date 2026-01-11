@@ -10,29 +10,27 @@ const cors_1 = __importDefault(require("cors"));
 const GameRoom_1 = require("./GameRoom");
 const app = (0, express_1.default)();
 const server = (0, http_1.createServer)(app);
-// Configure CORS based on environment
-const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'];
+// Production CORS configuration - allow all origins for multiplayer
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',')
+    : ['http://localhost:3000', 'http://localhost:5173'];
+// In production, allow any origin (for Vercel deployments)
+const corsOptions = {
+    origin: process.env.NODE_ENV === 'production' ? true : allowedOrigins,
+    methods: ['GET', 'POST', 'OPTIONS'],
+    credentials: true,
+};
 const io = new socket_io_1.Server(server, {
-    cors: {
-        origin: process.env.NODE_ENV === 'production'
-            ? allowedOrigins
-            : ['http://localhost:3000', 'http://localhost:5173'],
-        methods: ['GET', 'POST'],
-        credentials: true,
-    },
-    // Better settings for production
+    cors: corsOptions,
+    transports: ['websocket', 'polling'],
     pingTimeout: 60000,
     pingInterval: 25000,
-    upgradeTimeout: 30000,
-    transports: ['websocket', 'polling'],
+    allowEIO3: true,
 });
-app.use((0, cors_1.default)({
-    origin: process.env.NODE_ENV === 'production'
-        ? allowedOrigins
-        : ['http://localhost:3000', 'http://localhost:5173'],
-    credentials: true,
-}));
+app.use((0, cors_1.default)(corsOptions));
 app.use(express_1.default.json());
+// Handle preflight requests
+app.options('*', (0, cors_1.default)(corsOptions));
 // Store active game rooms
 const gameRooms = new Map();
 // Health check endpoint
@@ -40,19 +38,62 @@ app.get('/health', (req, res) => {
     res.json({
         status: 'ok',
         rooms: gameRooms.size,
-        timestamp: new Date().toISOString()
+        totalPlayers: Array.from(gameRooms.values()).reduce((sum, room) => sum + room.getPlayerCount(), 0),
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
     });
 });
 // Get available rooms for quick match
 app.get('/rooms', (req, res) => {
     const availableRooms = Array.from(gameRooms.entries())
-        .filter(([_, room]) => !room.isFull() && room.getPlayerCount() > 0)
+        .filter(([_, room]) => !room.isFull())
         .map(([id, room]) => ({
         roomId: id,
         playerCount: room.getPlayerCount(),
         maxPlayers: 10,
-    }));
-    res.json({ rooms: availableRooms });
+        gamePhase: room.getGamePhase(),
+        canJoin: !room.isFull() && room.getGamePhase() !== 'ended',
+    }))
+        .sort((a, b) => {
+        // Prioritize waiting rooms, then rooms with more players
+        if (a.gamePhase === 'waiting' && b.gamePhase !== 'waiting')
+            return -1;
+        if (b.gamePhase === 'waiting' && a.gamePhase !== 'waiting')
+            return 1;
+        return b.playerCount - a.playerCount;
+    });
+    res.json({ rooms: availableRooms, serverTime: Date.now() });
+});
+// Quick join endpoint - finds the best room or creates a new one
+app.get('/quickjoin', (req, res) => {
+    // Find best room: prefer waiting rooms with players, then in-progress rooms with space
+    let bestRoom = null;
+    for (const [roomId, room] of gameRooms) {
+        if (room.isFull())
+            continue;
+        const phase = room.getGamePhase();
+        if (phase === 'ended')
+            continue;
+        const playerCount = room.getPlayerCount();
+        // Prefer waiting rooms with at least 1 player
+        if (phase === 'waiting' && playerCount > 0) {
+            if (!bestRoom || playerCount > bestRoom.playerCount) {
+                bestRoom = { roomId, playerCount };
+            }
+        }
+        else if (!bestRoom && playerCount < 6) {
+            // In-progress room as fallback
+            bestRoom = { roomId, playerCount };
+        }
+    }
+    if (bestRoom) {
+        res.json({ roomId: bestRoom.roomId, isNew: false });
+    }
+    else {
+        // Create new room ID
+        const newRoomId = generateRoomId();
+        res.json({ roomId: newRoomId, isNew: true });
+    }
 });
 // Socket.io connection handling
 io.on('connection', (socket) => {
@@ -159,18 +200,31 @@ io.on('connection', (socket) => {
     });
     // Quick match - find available room or create new one
     socket.on('quick-match', (data) => {
-        // Find a room with space that's waiting for players
+        // Find best room: prefer waiting rooms with players
         let bestRoom = null;
         let bestRoomIdFound = null;
+        let bestScore = -1;
         for (const [rid, room] of gameRooms) {
-            if (!room.isFull() && room.getPlayerCount() > 0 && room.getPlayerCount() < 6) {
+            if (room.isFull())
+                continue;
+            const phase = room.getGamePhase();
+            if (phase === 'ended')
+                continue;
+            const playerCount = room.getPlayerCount();
+            // Score: waiting rooms with players get priority
+            let score = playerCount;
+            if (phase === 'waiting')
+                score += 100;
+            if (playerCount >= 1 && playerCount <= 5)
+                score += 50;
+            if (score > bestScore) {
+                bestScore = score;
                 bestRoom = room;
                 bestRoomIdFound = rid;
-                break;
             }
         }
         if (bestRoom && bestRoomIdFound) {
-            socket.emit('quick-match-found', { roomId: bestRoomIdFound });
+            socket.emit('quick-match-found', { roomId: bestRoomIdFound, playerCount: bestRoom.getPlayerCount() });
         }
         else {
             // Create new room
@@ -242,7 +296,28 @@ function findPlayerRoom(playerId) {
     return undefined;
 }
 const PORT = process.env.PORT || 3001;
+// Cleanup inactive rooms periodically
+setInterval(() => {
+    const now = Date.now();
+    for (const [roomId, room] of gameRooms) {
+        // Remove rooms that have been empty for more than 5 minutes
+        if (room.getPlayerCount() === 0) {
+            gameRooms.delete(roomId);
+            console.log(`🧹 Cleaned up empty room: ${roomId}`);
+        }
+    }
+}, 60000); // Check every minute
 server.listen(PORT, () => {
     console.log(`🚀 Nexus Wars server running on port ${PORT}`);
+    console.log(`📡 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`🌐 CORS enabled for: ${process.env.NODE_ENV === 'production' ? 'all origins' : allowedOrigins.join(', ')}`);
+});
+// Graceful shutdown
+process.on('SIGTERM', () => {
+    console.log('SIGTERM received, shutting down gracefully...');
+    server.close(() => {
+        console.log('Server closed');
+        process.exit(0);
+    });
 });
 //# sourceMappingURL=index.js.map

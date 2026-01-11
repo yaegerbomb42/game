@@ -941,6 +941,9 @@ class GameRoom extends events_1.EventEmitter {
     getRoomId() {
         return this.roomId;
     }
+    getGamePhase() {
+        return this.gamePhase;
+    }
     // Allow restarting a game
     restartGame() {
         if (this.gamePhase !== 'ended')

@@ -128,6 +128,23 @@ const Game = () => {
       navigate('/')
     })
 
+    socket.on('connect_error', (err: unknown) => {
+      console.error('Game connection error:', err)
+      // Try to reconnect
+      setTimeout(() => {
+        socket.connect()
+      }, 2000)
+    })
+
+    socket.on('disconnect', () => {
+      console.log('Disconnected from game server')
+    })
+
+    socket.on('reconnect', () => {
+      console.log('Reconnected to game server')
+      socket.emit('get-game-state')
+    })
+
     return () => {
       if (!existingSocket) {
         socket.close()
@@ -373,27 +390,93 @@ const Game = () => {
           ))}
         </div>
 
-        {/* Controls Help */}
+        {/* Controls Help - Enhanced */}
         <div style={{
           position: 'absolute',
           bottom: '10px',
           right: '10px',
-          background: 'rgba(0, 0, 0, 0.8)',
-          padding: '12px',
-          borderRadius: '8px',
-          fontSize: '11px'
+          background: 'linear-gradient(135deg, rgba(0, 0, 0, 0.9), rgba(26, 26, 46, 0.9))',
+          padding: '14px',
+          borderRadius: '10px',
+          fontSize: '11px',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+          boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)'
         }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 15px' }}>
-            <div><kbd>WASD</kbd> Move</div>
-            <div><kbd>E</kbd> Harvest</div>
-            <div><kbd>Space</kbd> Beacon</div>
-            <div><kbd>Q</kbd> Boost</div>
-            <div><kbd>Click</kbd> Attack</div>
-            <div><kbd>R</kbd> {ability.icon} Ability</div>
+          <div style={{ 
+            fontWeight: 'bold', 
+            marginBottom: '8px', 
+            fontSize: '12px',
+            color: '#3498db'
+          }}>
+            Controls
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 15px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <kbd style={{ 
+                background: 'rgba(255,255,255,0.2)', 
+                padding: '2px 6px', 
+                borderRadius: '4px',
+                fontFamily: 'monospace'
+              }}>WASD</kbd>
+              <span>Move</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <kbd style={{ 
+                background: 'rgba(255,255,255,0.2)', 
+                padding: '2px 6px', 
+                borderRadius: '4px',
+                fontFamily: 'monospace'
+              }}>E</kbd>
+              <span>Harvest</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <kbd style={{ 
+                background: 'rgba(255,255,255,0.2)', 
+                padding: '2px 6px', 
+                borderRadius: '4px',
+                fontFamily: 'monospace'
+              }}>Space</kbd>
+              <span>Beacon</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <kbd style={{ 
+                background: 'rgba(255,255,255,0.2)', 
+                padding: '2px 6px', 
+                borderRadius: '4px',
+                fontFamily: 'monospace'
+              }}>Q</kbd>
+              <span>Boost</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <kbd style={{ 
+                background: 'rgba(255,255,255,0.2)', 
+                padding: '2px 6px', 
+                borderRadius: '4px',
+                fontFamily: 'monospace'
+              }}>Click</kbd>
+              <span>Attack</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <kbd style={{ 
+                background: abilityCooldown > 0 ? 'rgba(255,0,0,0.3)' : 'rgba(255,255,255,0.2)', 
+                padding: '2px 6px', 
+                borderRadius: '4px',
+                fontFamily: 'monospace'
+              }}>R</kbd>
+              <span>{ability.icon} Ability</span>
+            </div>
           </div>
           {abilityCooldown > 0 && (
-            <div style={{ marginTop: '8px', opacity: 0.7 }}>
-              Ability: {Math.ceil(abilityCooldown / 1000)}s
+            <div style={{ 
+              marginTop: '10px', 
+              padding: '6px',
+              background: 'rgba(231, 76, 60, 0.2)',
+              borderRadius: '4px',
+              textAlign: 'center',
+              fontSize: '10px',
+              fontWeight: 'bold'
+            }}>
+              ⏱️ {Math.ceil(abilityCooldown / 1000)}s cooldown
             </div>
           )}
         </div>
