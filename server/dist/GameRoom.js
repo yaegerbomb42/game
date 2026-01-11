@@ -53,12 +53,38 @@ class GameRoom extends events_1.EventEmitter {
         }));
     }
     addPlayer(socket, player) {
-        // Find spawn position away from other players
+        // Check if player is reconnecting
+        const existingPlayer = Array.from(this.players.values()).find(p => p.userId === player.userId);
+        if (existingPlayer) {
+            // Reconnect existing player
+            existingPlayer.id = socket.id; // Update socket ID
+            existingPlayer.isConnected = true;
+            this.players.set(socket.id, existingPlayer); // Map new socket to player
+            // Remove old socket mapping if different
+            if (socket.id !== existingPlayer.id) {
+                this.sockets.delete(existingPlayer.id);
+            }
+            this.sockets.set(socket.id, socket);
+            this.broadcastEvent({
+                type: 'player-reconnected',
+                data: { playerId: existingPlayer.id, userId: existingPlayer.userId },
+                timestamp: Date.now(),
+            });
+            // Send current state to reconnected player
+            socket.emit('joined-room', {
+                roomId: this.roomId,
+                player: existingPlayer,
+                gameState: this.getSerializableGameState(),
+            });
+            return;
+        }
+        // New player join logic
         const spawnPos = this.findSafeSpawnPosition();
         player.x = spawnPos.x;
         player.y = spawnPos.y;
         player.targetX = spawnPos.x;
         player.targetY = spawnPos.y;
+        player.isConnected = true;
         this.players.set(player.id, player);
         this.sockets.set(player.id, socket);
         this.broadcastEvent({
@@ -66,8 +92,16 @@ class GameRoom extends events_1.EventEmitter {
             data: { player },
             timestamp: Date.now(),
         });
+        // Send initial state to new player
+        socket.emit('joined-room', {
+            roomId: this.roomId,
+            player,
+            gameState: this.getSerializableGameState(),
+        });
         // Start game if we have enough players
+        console.log(`[GameRoom] Checking start condition: players=${this.players.size}, phase=${this.gamePhase}`);
         if (this.players.size >= 2 && this.gamePhase === 'waiting') {
+            console.log('[GameRoom] Starting game...');
             this.startGame();
         }
     }
@@ -103,25 +137,18 @@ class GameRoom extends events_1.EventEmitter {
     removePlayer(playerId) {
         const player = this.players.get(playerId);
         if (player) {
-            // Release any nexuses controlled by this player
-            this.nexuses.forEach(nexus => {
-                if (nexus.controlledBy === playerId) {
-                    nexus.controlledBy = null;
-                }
-                nexus.contestProgress.delete(playerId);
-            });
-            this.players.delete(playerId);
+            player.isConnected = false;
             this.sockets.delete(playerId);
+            // We don't remove the player data immediately to allow reconnection
+            // Just mark as disconnected
             this.broadcastEvent({
                 type: 'player-left',
                 data: { playerId, playerName: player.name },
                 timestamp: Date.now(),
             });
-            // End game if not enough players
-            if (this.players.size < 2 && this.gamePhase !== 'waiting' && this.gamePhase !== 'ended') {
-                this.endGame('insufficient-players');
-            }
-            if (this.players.size === 0) {
+            // Cleanup logic if everyone leaves or after timeout could go here
+            const allDisconnected = Array.from(this.players.values()).every(p => !p.isConnected);
+            if (allDisconnected) {
                 this.emit('empty');
             }
         }
@@ -841,6 +868,7 @@ class GameRoom extends events_1.EventEmitter {
         }
     }
     broadcastEvent(event) {
+        console.log(`[GameRoom] Broadcasting event ${event.type} to room ${this.roomId}`);
         this.io.to(this.roomId).emit('game-event', event);
     }
     broadcastGameState() {

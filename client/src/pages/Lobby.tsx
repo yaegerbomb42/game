@@ -66,6 +66,13 @@ const Lobby = () => {
         gamePhase: data.gameState.gamePhase
       })
       setIsConnecting(false)
+
+      // Navigate immediately if game is already started
+      if (data.gameState.gamePhase !== 'waiting') {
+        navigate(`/game/${data.roomId}`, {
+          state: { socket: newSocket, playerName: localStorage.getItem('playerName') },
+        })
+      }
     })
 
     newSocket.on('room-full', () => {
@@ -92,14 +99,14 @@ const Lobby = () => {
       if (currentRoomState) {
         const wasWaiting = currentRoomState.gamePhase === 'waiting'
         const isNowStarted = gameState.gamePhase !== 'waiting'
-        
+
         const nextRoomState: RoomState = {
           ...currentRoomState,
           players: Object.values(gameState.players),
           gamePhase: gameState.gamePhase
         }
         setRoomState(nextRoomState)
-        
+
         const currentSocket = socketRef.current
         if (wasWaiting && isNowStarted && currentSocket) {
           navigate(`/game/${nextRoomState.roomId}`, {
@@ -112,9 +119,9 @@ const Lobby = () => {
     newSocket.on('quick-match-found', (data) => {
       setIsConnecting(false)
       if (data.roomId) {
-        newSocket.emit('join-room', { 
-          roomId: data.roomId, 
-          playerName: localStorage.getItem('playerName') 
+        newSocket.emit('join-room', {
+          roomId: data.roomId,
+          playerName: localStorage.getItem('playerName')
         })
       }
     })
@@ -152,6 +159,15 @@ const Lobby = () => {
     }
   }
 
+  // Initialize userId if not present
+  useEffect(() => {
+    if (!localStorage.getItem('userId')) {
+      localStorage.setItem('userId', crypto.randomUUID());
+    }
+  }, []);
+
+  const getUserId = () => localStorage.getItem('userId');
+
   const handleCreateRoom = () => {
     if (!playerName.trim()) {
       setError('Please enter your name')
@@ -161,9 +177,10 @@ const Lobby = () => {
     setIsConnecting(true)
     setError('')
     localStorage.setItem('playerName', playerName.trim())
-    socket?.emit('join-room', { 
+    socket?.emit('join-room', {
       playerName: playerName.trim(),
-      abilityType: selectedAbility 
+      abilityType: selectedAbility,
+      userId: getUserId()
     })
   }
 
@@ -182,10 +199,11 @@ const Lobby = () => {
     setIsConnecting(true)
     setError('')
     localStorage.setItem('playerName', playerName.trim())
-    socket?.emit('join-room', { 
-      roomId: joinRoomId, 
+    socket?.emit('join-room', {
+      roomId: joinRoomId,
       playerName: playerName.trim(),
-      abilityType: selectedAbility 
+      abilityType: selectedAbility,
+      userId: getUserId()
     })
   }
 
@@ -198,20 +216,22 @@ const Lobby = () => {
     setIsConnecting(true)
     setError('')
     localStorage.setItem('playerName', playerName.trim())
-    
+
     // Check for available rooms first
     if (availableRooms.length > 0) {
       const bestRoom = availableRooms.find(r => r.playerCount < 6) || availableRooms[0]
-      socket?.emit('join-room', { 
-        roomId: bestRoom.roomId, 
+      socket?.emit('join-room', {
+        roomId: bestRoom.roomId,
         playerName: playerName.trim(),
-        abilityType: selectedAbility
+        abilityType: selectedAbility,
+        userId: getUserId()
       })
     } else {
       // Create new room
-      socket?.emit('join-room', { 
+      socket?.emit('join-room', {
         playerName: playerName.trim(),
-        abilityType: selectedAbility 
+        abilityType: selectedAbility,
+        userId: getUserId()
       })
     }
   }
@@ -231,66 +251,71 @@ const Lobby = () => {
   if (roomState) {
     return (
       <div className="lobby-container">
-        <div className="lobby-card" style={{ maxWidth: '500px' }}>
-          <h1>🎮 Nexus Wars</h1>
-          
-          <div className="room-info">
-            <h2>Room: {roomState.roomId}</h2>
-            <button className="btn btn-secondary" onClick={copyRoomId} style={{ marginBottom: '10px' }}>
-              📋 Copy Room ID
-            </button>
-            <p style={{ opacity: 0.7 }}>Share this code with friends!</p>
+        <div className="lobby-card">
+          <h1 className="lobby-title">Nexus Wars</h1>
+
+          <div className="mb-4">
+            <h2 className="text-center text-primary">ROOM: {roomState.roomId}</h2>
+            <div className="text-center">
+              <button className="btn btn-secondary copy-btn" onClick={copyRoomId}>
+                COPY ACCESS CODE
+              </button>
+              <p className="text-dim text-small mt-4">SHARE WITH SQUAD</p>
+            </div>
           </div>
 
-          <div className="room-info">
-            <h3>Players ({roomState.players.length}/10)</h3>
-            <div style={{ display: 'grid', gap: '8px' }}>
+          <div className="mb-4">
+            <h3 className="text-small text-dim">AGENTS ({roomState.players.length}/10)</h3>
+            <div className="game-list">
               {roomState.players.map((player) => {
                 const ability = ABILITY_INFO[player.abilityType] || ABILITY_INFO.dash
                 return (
-                  <div key={player.id} className="player-item" style={{ 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    gap: '10px',
-                    background: 'rgba(255,255,255,0.1)',
-                    padding: '8px 12px',
-                    borderRadius: '8px'
-                  }}>
-                    <div 
-                      className="player-color" 
-                      style={{ backgroundColor: player.color, width: '24px', height: '24px', borderRadius: '50%' }}
-                    />
-                    <span style={{ flex: 1 }}>{player.name}</span>
-                    <span title={ability.description} style={{ cursor: 'help' }}>
-                      {ability.icon} {ability.name}
-                    </span>
+                  <div key={player.id} className="room-list-item">
+                    <div className="player-item-content">
+                      <div
+                        className="player-avatar"
+                        style={{ backgroundColor: player.color, boxShadow: `0 0 10px ${player.color}` }}
+                      />
+                      <span className="player-name">{player.name}</span>
+                      <span className="text-small text-primary">
+                        {ability.icon} {ability.name}
+                      </span>
+                    </div>
                   </div>
                 )
               })}
             </div>
           </div>
 
-          <div className="room-info" style={{ 
-            background: roomState.players.length >= 2 ? 'rgba(39, 174, 96, 0.2)' : 'rgba(255, 255, 255, 0.1)',
-            padding: '15px',
-            borderRadius: '8px',
-            border: roomState.players.length >= 2 ? '2px solid #27ae60' : '2px solid transparent'
-          }}>
-            <h3 style={{ margin: 0 }}>
-              {roomState.gamePhase === 'waiting' 
-                ? roomState.players.length >= 2 
-                  ? '✅ Ready to start!'
-                  : '⏳ Waiting for players...'
-                : '🎮 Game in progress'
+          <div className={`system-status ${roomState.players.length >= 2 ? 'status-ready' : 'status-waiting'}`}>
+            <h3 className={`status-text ${roomState.players.length >= 2 ? 'text-success' : ''}`}>
+              {roomState.gamePhase === 'waiting'
+                ? roomState.players.length >= 2
+                  ? 'SYSTEM READY'
+                  : 'AWAITING AGENTS...'
+                : 'CONFLICT IN PROGRESS'
               }
             </h3>
             {roomState.players.length < 2 && (
-              <p style={{ margin: '10px 0 0', opacity: 0.7 }}>Need at least 2 players</p>
+              <p className="text-dim text-small min-players-text">MINIMUM 2 AGENTS REQUIRED</p>
             )}
           </div>
 
-          <button className="btn" onClick={handleLeaveRoom} style={{ marginTop: '10px' }}>
-            🚪 Leave Room
+          <div className="mb-4 text-center">
+            <button
+              className="btn btn-secondary"
+              onClick={() => {
+                if (socketRef.current) {
+                  socketRef.current.emit('add-bot', roomState.roomId);
+                }
+              }}
+            >
+              🤖 ADD TRAINING BOT
+            </button>
+          </div>
+
+          <button className="btn btn-secondary" onClick={handleLeaveRoom}>
+            ABORT MISSION
           </button>
         </div>
       </div>
@@ -299,125 +324,83 @@ const Lobby = () => {
 
   return (
     <div className="lobby-container">
-      <div className="lobby-card" style={{ maxWidth: '600px' }}>
-        <h1 style={{ fontSize: '2.5rem', marginBottom: '5px' }}>🎮 Nexus Wars</h1>
-        <p style={{ opacity: 0.8, marginBottom: '20px' }}>Fast-paced 2D multiplayer strategy</p>
+      <div className="lobby-card">
+        <h1 className="lobby-title">NEXUS WARS</h1>
+        <p className="text-dim game-title-subtitle">Tactical Multiplayer Strategy</p>
 
         {error && (
-          <div style={{ 
-            background: 'rgba(231, 76, 60, 0.2)', 
-            padding: '12px', 
-            borderRadius: '8px', 
-            marginBottom: '15px',
-            border: '1px solid rgba(231, 76, 60, 0.5)'
-          }}>
+          <div className="error-message">
             ⚠️ {error}
           </div>
         )}
 
         <div className="input-group">
-          <label htmlFor="playerName">Your Name</label>
+          <label className="input-label" htmlFor="playerName">AGENT IDENTITY</label>
           <input
             id="playerName"
+            className="game-input"
             type="text"
             value={playerName}
             onChange={(e) => setPlayerName(e.target.value)}
-            placeholder="Enter your player name"
+            placeholder="ENTER CODENAME"
             maxLength={15}
             disabled={isConnecting}
-            style={{ fontSize: '16px', padding: '12px' }}
           />
         </div>
 
-        {/* Ability Selection */}
-        <div style={{ marginBottom: '20px' }}>
-          <label style={{ display: 'block', marginBottom: '10px' }}>Select Ability</label>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
+        <div className="mb-4">
+          <label className="input-label">TACTICAL LOADOUT</label>
+          <div className="ability-grid">
             {Object.entries(ABILITY_INFO).map(([type, info]) => (
-              <button
+              <div
                 key={type}
-                onClick={() => setSelectedAbility(type)}
-                disabled={isConnecting}
-                style={{
-                  background: selectedAbility === type ? 'rgba(52, 152, 219, 0.3)' : 'rgba(255, 255, 255, 0.05)',
-                  border: selectedAbility === type ? '2px solid #3498db' : '1px solid rgba(255, 255, 255, 0.1)',
-                  borderRadius: '8px',
-                  padding: '10px 5px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: '5px',
-                  transition: 'all 0.2s'
-                }}
+                className={`ability-card ${selectedAbility === type ? 'selected' : ''}`}
+                onClick={() => !isConnecting && setSelectedAbility(type)}
               >
-                <span style={{ fontSize: '24px' }}>{info.icon}</span>
-                <span style={{ fontSize: '12px', fontWeight: selectedAbility === type ? 'bold' : 'normal' }}>{info.name}</span>
-              </button>
+                <div className="ability-icon">{info.icon}</div>
+                <div className="ability-name">{info.name}</div>
+              </div>
             ))}
           </div>
-          <div style={{ 
-            fontSize: '12px', 
-            marginTop: '8px', 
-            opacity: 0.7, 
-            textAlign: 'center',
-            background: 'rgba(0,0,0,0.2)',
-            padding: '8px',
-            borderRadius: '4px'
-          }}>
+          <div className="ability-description">
             {ABILITY_INFO[selectedAbility].description}
           </div>
         </div>
 
         {/* Quick Match - Primary CTA */}
-        <button 
-          className="btn" 
+        <button
+          className="btn btn-primary mb-4"
           onClick={handleQuickMatch}
           disabled={isConnecting || !playerName.trim()}
-          style={{ 
-            fontSize: '18px', 
-            padding: '15px 30px',
-            background: 'linear-gradient(135deg, #27ae60, #2ecc71)',
-            marginBottom: '10px'
-          }}
         >
-          {isConnecting ? '🔄 Finding match...' : '⚡ Quick Match'}
+          {isConnecting ? 'INITIALIZING LINK...' : '⚡ QUICK DEPLOY'}
         </button>
 
-        <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
-          <button 
-            className="btn btn-secondary" 
+        <div className="flex-gap mb-4">
+          <button
+            className="btn btn-secondary"
             onClick={handleCreateRoom}
             disabled={isConnecting || !playerName.trim()}
-            style={{ flex: 1 }}
           >
-            {isConnecting ? '🔄...' : '🆕 Create Room'}
+            CREATE PRIVATE SECTOR
           </button>
         </div>
 
         {/* Available Rooms */}
         {availableRooms.length > 0 && (
-          <div style={{ marginBottom: '20px' }}>
-            <h4 style={{ marginBottom: '10px' }}>🌐 Active Games</h4>
-            <div style={{ display: 'grid', gap: '8px' }}>
+          <div className="mb-4">
+            <h4 className="rooms-header text-dim text-small">ACTIVE SECTORS</h4>
+            <div className="game-list">
               {availableRooms.slice(0, 3).map(room => (
-                <div key={room.roomId} style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  background: 'rgba(255,255,255,0.1)',
-                  padding: '10px 15px',
-                  borderRadius: '8px'
-                }}>
-                  <span>Room {room.roomId}</span>
-                  <span style={{ opacity: 0.7 }}>{room.playerCount}/{room.maxPlayers}</span>
-                  <button 
-                    className="btn btn-secondary"
+                <div key={room.roomId} className="room-list-item">
+                  <span className="room-id-text">SECTOR {room.roomId}</span>
+                  <span className="text-dim text-small">{room.playerCount}/{room.maxPlayers}</span>
+                  <button
+                    className="btn btn-secondary join-btn"
                     onClick={() => handleJoinRoom(room.roomId)}
                     disabled={isConnecting}
-                    style={{ padding: '5px 15px', fontSize: '14px' }}
                   >
-                    Join
+                    INFILTRATE
                   </button>
                 </div>
               ))}
@@ -425,88 +408,61 @@ const Lobby = () => {
           </div>
         )}
 
-        <div style={{ display: 'flex', alignItems: 'center', margin: '15px 0', opacity: 0.5 }}>
-          <hr style={{ flex: 1, border: '1px solid rgba(255,255,255,0.3)' }} />
-          <span style={{ padding: '0 15px' }}>OR JOIN BY CODE</span>
-          <hr style={{ flex: 1, border: '1px solid rgba(255,255,255,0.3)' }} />
+        <div className="divider-container">
+          <hr className="divider-line" />
+          <span className="divider-text">SECURE CHANNEL</span>
+          <hr className="divider-line" />
         </div>
 
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div className="flex-gap">
           <input
+            className="game-input room-input"
             type="text"
             value={roomId}
             onChange={(e) => setRoomId(e.target.value.toUpperCase())}
-            placeholder="Room code"
+            placeholder="ACCESS CODE"
             maxLength={6}
             disabled={isConnecting}
-            style={{ flex: 1, fontSize: '16px', padding: '12px', textAlign: 'center', letterSpacing: '2px' }}
           />
-          <button 
-            className="btn btn-secondary" 
+          <button
+            className="btn btn-secondary connect-btn"
             onClick={() => handleJoinRoom()}
             disabled={isConnecting || !playerName.trim() || !roomId.trim()}
           >
-            Join
+            CONNECT
           </button>
         </div>
 
         {/* Tutorial Toggle */}
-        <button 
+        <button
           onClick={() => setShowTutorial(!showTutorial)}
-          style={{ 
-            background: 'transparent', 
-            border: 'none', 
-            color: '#3498db', 
-            cursor: 'pointer',
-            marginTop: '20px',
-            fontSize: '14px'
-          }}
+          className="text-small mt-4 w-full tutorial-toggle"
         >
-          {showTutorial ? '▼ Hide Tutorial' : '▶ How to Play'}
+          {showTutorial ? '⛔ CLOSE DATABASE' : 'ℹ️ ACCESS TACTICAL DATA'}
         </button>
 
         {showTutorial && (
-          <div style={{ 
-            textAlign: 'left', 
-            marginTop: '15px', 
-            padding: '20px',
-            background: 'rgba(0,0,0,0.3)',
-            borderRadius: '12px',
-            fontSize: '14px'
-          }}>
-            <h4 style={{ marginBottom: '15px' }}>🎯 Objective</h4>
-            <p style={{ marginBottom: '15px', opacity: 0.9 }}>
-              Control energy nexuses to gain influence and score. The player with the highest score when time runs out wins!
+          <div className="tutorial-content">
+            <h4 className="tutorial-section-title">MISSION OBJECTIVE</h4>
+            <p className="text-dim mb-4">
+              Capture Energy Nexuses to generate influence. Eliminate hostile agents to gain score. The agent with the highest score after the Final Pulse wins.
             </p>
-            
-            <h4 style={{ marginBottom: '10px' }}>⌨️ Controls</h4>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '15px' }}>
-              <div><kbd>WASD</kbd> Move</div>
-              <div><kbd>Click</kbd> Move/Attack</div>
-              <div><kbd>E</kbd> Harvest nexus</div>
-              <div><kbd>Q</kbd> Boost nexus</div>
-              <div><kbd>Space</kbd> Deploy beacon</div>
-              <div><kbd>R</kbd> Use ability</div>
-              <div><kbd>F</kbd> Attack nearest</div>
+
+            <h4 className="tutorial-section-title">CONTROLS</h4>
+            <div className="tutorial-grid">
+              <div><kbd>WASD</kbd> VECTOR</div>
+              <div><kbd>L-CLICK</kbd> ATTACK/MOVE</div>
+              <div><kbd>E</kbd> HARVEST</div>
+              <div><kbd>Q</kbd> BOOST</div>
+              <div><kbd>SPACE</kbd> BEACON</div>
+              <div><kbd>R</kbd> ABILITY</div>
             </div>
 
-            <h4 style={{ marginBottom: '10px' }}>⚔️ Special Abilities</h4>
-            <div style={{ display: 'grid', gap: '6px' }}>
-              {Object.entries(ABILITY_INFO).map(([key, info]) => (
-                <div key={key} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <span>{info.icon}</span>
-                  <span style={{ fontWeight: 'bold' }}>{info.name}:</span>
-                  <span style={{ opacity: 0.8 }}>{info.description}</span>
-                </div>
-              ))}
-            </div>
-
-            <h4 style={{ marginTop: '15px', marginBottom: '10px' }}>💡 Tips</h4>
-            <ul style={{ margin: 0, paddingLeft: '20px', opacity: 0.9 }}>
-              <li>Stay near nexuses to passively capture them</li>
-              <li>Combo attacks for bonus damage and score</li>
-              <li>Collect power-ups for temporary boosts</li>
-              <li>Kill streaks give bonus energy!</li>
+            <h4 className="tutorial-section-title">TACTICS</h4>
+            <ul className="text-dim tutorial-list">
+              <li>Nexuses charge faster when connected to beacons.</li>
+              <li>Combos generate 2x energy.</li>
+              <li>Maintain kill streaks for ability cooldown reduction.</li>
             </ul>
           </div>
         )}

@@ -1,5 +1,6 @@
 export interface Player {
     id: string;
+    userId: string;
     name: string;
     x: number;
     y: number;
@@ -11,6 +12,7 @@ export interface Player {
     influence: number;
     color: string;
     isAlive: boolean;
+    isConnected: boolean;
     lastAction: number;
     health: number;
     maxHealth: number;
@@ -102,7 +104,7 @@ export interface PlayerAction {
     timestamp: number;
 }
 export interface GameEvent {
-    type: 'player-joined' | 'player-left' | 'nexus-captured' | 'energy-pulse' | 'game-started' | 'game-ended' | 'player-attacked' | 'player-killed' | 'powerup-spawned' | 'powerup-collected' | 'achievement-unlocked' | 'beacon-deployed' | 'attack-blocked' | 'player-respawned' | 'ability-used' | 'phase-changed';
+    type: 'player-joined' | 'player-left' | 'player-reconnected' | 'nexus-captured' | 'energy-pulse' | 'game-started' | 'game-ended' | 'player-attacked' | 'player-killed' | 'powerup-spawned' | 'powerup-collected' | 'achievement-unlocked' | 'beacon-deployed' | 'attack-blocked' | 'player-respawned' | 'ability-used' | 'phase-changed';
     data: any;
     timestamp: number;
 }

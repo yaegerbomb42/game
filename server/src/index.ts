@@ -1,7 +1,8 @@
 import express from 'express';
 import { createServer } from 'http';
-import { Server } from 'socket.io';
+import { Server, Socket } from 'socket.io';
 import cors from 'cors';
+import { v4 as uuidv4 } from 'uuid';
 import { GameRoom } from './GameRoom';
 import { Player } from './types';
 
@@ -121,8 +122,8 @@ io.on('connection', (socket) => {
   console.log(`Player connected: ${socket.id}`);
 
   // Join or create a game room
-  socket.on('join-room', (data: { roomId?: string; playerName: string; abilityType?: string }) => {
-    const { roomId: rawRoomId, playerName, abilityType } = data;
+  socket.on('join-room', (data: { roomId?: string; playerName: string; abilityType?: string; userId?: string }) => {
+    const { roomId: rawRoomId, playerName, abilityType, userId } = data;
 
     let room: GameRoom;
     let targetRoomId: string;
@@ -168,6 +169,7 @@ io.on('connection', (socket) => {
 
     const player: Player = {
       id: socket.id,
+      userId: userId || socket.id, // Use provided userId or fallback to socket.id
       name: playerName,
       x: Math.random() * 800,
       y: Math.random() * 600,
@@ -179,6 +181,7 @@ io.on('connection', (socket) => {
       influence: 0,
       color: getPlayerColor(room.getPlayerCount()),
       isAlive: true,
+      isConnected: true,
       lastAction: Date.now(),
       // Combat properties
       health: 100,
@@ -210,16 +213,77 @@ io.on('connection', (socket) => {
       lastAbilityUse: 0,
     };
 
-    room.addPlayer(socket, player);
     socket.join(targetRoomId!);
+    room.addPlayer(socket, player);
 
-    socket.emit('joined-room', {
-      roomId: targetRoomId,
-      player,
-      gameState: room.getSerializableGameState(),
-    });
+    // Note: joined-room is now emitted by room.addPlayer() to handle both new and reconnecting players correctly
 
     console.log(`Player ${playerName} joined room ${targetRoomId} with ability ${selectedAbility}`);
+  });
+
+  // Add a test bot
+  socket.on('add-bot', (roomId: string) => {
+    const room = gameRooms.get(normalizeRoomId(roomId));
+    if (!room) return;
+
+    const botId = `BOT_${uuidv4().split('-')[0]}`;
+    const botName = `TRAINING_BOT_${Math.floor(Math.random() * 1000)}`;
+
+    const botPlayer: Player = {
+      id: botId,
+      userId: botId,
+      name: botName,
+      x: Math.random() * 800,
+      y: Math.random() * 600,
+      targetX: 0,
+      targetY: 0,
+      velocityX: 0,
+      velocityY: 0,
+      energy: 0,
+      influence: 0,
+      color: '#ff0055', // Bot is always secondary/reddish
+      isAlive: true,
+      isConnected: true,
+      lastAction: Date.now(),
+      health: 100,
+      maxHealth: 100,
+      attackPower: 15, // Weaker than players
+      attackRange: 80,
+      lastAttack: 0,
+      attackCooldown: 1000,
+      comboCount: 0,
+      lastComboTime: 0,
+      killStreak: 0,
+      kills: 0,
+      deaths: 0,
+      score: 0,
+      damageDealt: 0,
+      nexusesCaptured: 0,
+      activePowerUps: [],
+      abilityType: 'dash',
+      abilityCooldown: 15000,
+      lastAbilityUse: 0,
+
+      // Missing properties
+      speed: 5,
+      lastMovement: Date.now(),
+      invincibleUntil: 0,
+    };
+
+    // Mock socket for the bot
+    const mockSocket = {
+      id: botId,
+      emit: () => { }, // No-op
+      join: () => { }, // No-op
+      on: () => { }, // No-op
+    } as any as Socket;
+
+    // Join the "socket" to the room (even though it's a mock, we don't really need the io.join logic since we manage broadcasting)
+    // Actually, for io.to(room).emit to work, we usually rely on real sockets. 
+    // But since the bot doesn't receive events, we just need the GameRoom to track it.
+
+    room.addPlayer(mockSocket, botPlayer);
+    console.log(`[Server] Added bot ${botName} to room ${roomId}`);
   });
 
   // Handle get game state request

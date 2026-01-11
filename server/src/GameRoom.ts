@@ -58,13 +58,44 @@ export class GameRoom extends EventEmitter {
   }
 
   addPlayer(socket: Socket, player: Player) {
-    // Find spawn position away from other players
+    // Check if player is reconnecting
+    const existingPlayer = Array.from(this.players.values()).find(p => p.userId === player.userId);
+
+    if (existingPlayer) {
+      // Reconnect existing player
+      existingPlayer.id = socket.id; // Update socket ID
+      existingPlayer.isConnected = true;
+      this.players.set(socket.id, existingPlayer); // Map new socket to player
+
+      // Remove old socket mapping if different
+      if (socket.id !== existingPlayer.id) {
+        this.sockets.delete(existingPlayer.id);
+      }
+      this.sockets.set(socket.id, socket);
+
+      this.broadcastEvent({
+        type: 'player-reconnected',
+        data: { playerId: existingPlayer.id, userId: existingPlayer.userId },
+        timestamp: Date.now(),
+      });
+
+      // Send current state to reconnected player
+      socket.emit('joined-room', {
+        roomId: this.roomId,
+        player: existingPlayer,
+        gameState: this.getSerializableGameState(),
+      });
+      return;
+    }
+
+    // New player join logic
     const spawnPos = this.findSafeSpawnPosition();
     player.x = spawnPos.x;
     player.y = spawnPos.y;
     player.targetX = spawnPos.x;
     player.targetY = spawnPos.y;
-    
+    player.isConnected = true;
+
     this.players.set(player.id, player);
     this.sockets.set(player.id, socket);
 
@@ -74,8 +105,17 @@ export class GameRoom extends EventEmitter {
       timestamp: Date.now(),
     });
 
+    // Send initial state to new player
+    socket.emit('joined-room', {
+      roomId: this.roomId,
+      player,
+      gameState: this.getSerializableGameState(),
+    });
+
     // Start game if we have enough players
+    console.log(`[GameRoom] Checking start condition: players=${this.players.size}, phase=${this.gamePhase}`);
     if (this.players.size >= 2 && this.gamePhase === 'waiting') {
+      console.log('[GameRoom] Starting game...');
       this.startGame();
     }
   }
@@ -116,16 +156,10 @@ export class GameRoom extends EventEmitter {
   removePlayer(playerId: string) {
     const player = this.players.get(playerId);
     if (player) {
-      // Release any nexuses controlled by this player
-      this.nexuses.forEach(nexus => {
-        if (nexus.controlledBy === playerId) {
-          nexus.controlledBy = null;
-        }
-        nexus.contestProgress.delete(playerId);
-      });
-
-      this.players.delete(playerId);
+      player.isConnected = false;
       this.sockets.delete(playerId);
+      // We don't remove the player data immediately to allow reconnection
+      // Just mark as disconnected
 
       this.broadcastEvent({
         type: 'player-left',
@@ -133,12 +167,9 @@ export class GameRoom extends EventEmitter {
         timestamp: Date.now(),
       });
 
-      // End game if not enough players
-      if (this.players.size < 2 && this.gamePhase !== 'waiting' && this.gamePhase !== 'ended') {
-        this.endGame('insufficient-players');
-      }
-
-      if (this.players.size === 0) {
+      // Cleanup logic if everyone leaves or after timeout could go here
+      const allDisconnected = Array.from(this.players.values()).every(p => !p.isConnected);
+      if (allDisconnected) {
         this.emit('empty');
       }
     }
@@ -242,18 +273,18 @@ export class GameRoom extends EventEmitter {
     if (highestProgress >= 100 && currentLeaderId && currentLeaderId !== nexus.controlledBy) {
       const previousOwner = nexus.controlledBy;
       nexus.controlledBy = currentLeaderId;
-      
+
       const player = this.players.get(currentLeaderId);
       if (player) {
         player.influence += 10;
         player.score += 50;
         player.nexusesCaptured++;
-        
+
         this.broadcastEvent({
           type: 'nexus-captured',
-          data: { 
-            nexusId: nexus.id, 
-            playerId: currentLeaderId, 
+          data: {
+            nexusId: nexus.id,
+            playerId: currentLeaderId,
             playerName: player.name,
             previousOwner
           },
@@ -279,7 +310,7 @@ export class GameRoom extends EventEmitter {
       player.comboCount++;
       const comboBonus = Math.min(player.comboCount * 2, 20);
       player.score += comboBonus;
-      
+
       if (player.comboCount >= 5) {
         this.broadcastEvent({
           type: 'achievement-unlocked',
@@ -295,7 +326,7 @@ export class GameRoom extends EventEmitter {
 
   private handleDeployBeacon(player: Player, action: PlayerAction) {
     if (player.energy < 25) return;
-    
+
     player.energy -= 25;
     player.influence += 5;
     player.score += 10;
@@ -328,16 +359,16 @@ export class GameRoom extends EventEmitter {
 
   private handleAttack(player: Player, action: PlayerAction) {
     const now = Date.now();
-    
+
     // Check invincibility
     if (now < player.invincibleUntil) return;
-    
+
     // Check attack cooldown
     if (now - player.lastAttack < player.attackCooldown) return;
-    
+
     const targetPlayer = this.players.get(action.data.targetId || '');
     if (!targetPlayer || !targetPlayer.isAlive) return;
-    
+
     // Check target invincibility
     if (now < targetPlayer.invincibleUntil) {
       this.broadcastEvent({
@@ -396,7 +427,7 @@ export class GameRoom extends EventEmitter {
 
   private handleDefend(player: Player, action: PlayerAction) {
     if (player.energy < 15) return;
-    
+
     player.energy -= 15;
     // Grant temporary shield
     const shieldPowerUp: PowerUp = {
@@ -463,7 +494,7 @@ export class GameRoom extends EventEmitter {
 
   private respawnPlayer(player: Player) {
     if (!this.players.has(player.id)) return;
-    
+
     const spawnPos = this.findSafeSpawnPosition();
     player.isAlive = true;
     player.health = player.maxHealth;
@@ -474,7 +505,7 @@ export class GameRoom extends EventEmitter {
     player.activePowerUps = [];
     player.invincibleUntil = Date.now() + 2000; // 2 second invincibility
     player.comboCount = 0;
-    
+
     this.broadcastEvent({
       type: 'player-respawned',
       data: { playerId: player.id, x: spawnPos.x, y: spawnPos.y },
@@ -485,21 +516,21 @@ export class GameRoom extends EventEmitter {
   private handleCollectPowerUp(player: Player, action: PlayerAction) {
     const powerUpIndex = this.powerUps.findIndex(p => p.id === action.data.powerUpId && !p.collected);
     if (powerUpIndex === -1) return;
-    
+
     const powerUp = this.powerUps[powerUpIndex];
     const distance = Math.sqrt((player.x - powerUp.x) ** 2 + (player.y - powerUp.y) ** 2);
-    
+
     if (distance > 40) return;
-    
+
     powerUp.collected = true;
     powerUp.expiresAt = Date.now() + powerUp.duration;
     player.activePowerUps.push(powerUp);
-    
+
     this.applyPowerUpEffect(player, powerUp);
     this.powerUps.splice(powerUpIndex, 1);
-    
+
     player.score += 20;
-    
+
     this.broadcastEvent({
       type: 'powerup-collected',
       data: {
@@ -555,7 +586,7 @@ export class GameRoom extends EventEmitter {
     const targetY = action.data.y ?? player.targetY;
     const angle = Math.atan2(targetY - player.y, targetX - player.x);
     const dashDistance = 150;
-    
+
     player.x = Math.max(20, Math.min(GAME_WIDTH - 20, player.x + Math.cos(angle) * dashDistance));
     player.y = Math.max(20, Math.min(GAME_HEIGHT - 20, player.y + Math.sin(angle) * dashDistance));
     player.targetX = player.x;
@@ -604,10 +635,10 @@ export class GameRoom extends EventEmitter {
   private executeScan(player: Player) {
     // Reveal all player positions and nexus states
     const scanData = {
-      players: Array.from(this.players.values()).map(p => ({ 
-        id: p.id, x: p.x, y: p.y, health: p.health, energy: p.energy 
+      players: Array.from(this.players.values()).map(p => ({
+        id: p.id, x: p.x, y: p.y, health: p.health, energy: p.energy
       })),
-      nexuses: this.nexuses.map(n => ({ 
+      nexuses: this.nexuses.map(n => ({
         id: n.id, controlledBy: n.controlledBy, contestProgress: Object.fromEntries(n.contestProgress)
       })),
     };
@@ -672,8 +703,8 @@ export class GameRoom extends EventEmitter {
         const dist = Math.sqrt((player.x - powerUp.x) ** 2 + (player.y - powerUp.y) ** 2);
         if (dist < 30) {
           // Auto-collect nearby power-ups
-          this.handleCollectPowerUp(player, { 
-            type: 'collect-powerup', 
+          this.handleCollectPowerUp(player, {
+            type: 'collect-powerup',
             data: { powerUpId: powerUp.id },
             timestamp: Date.now()
           });
@@ -737,7 +768,7 @@ export class GameRoom extends EventEmitter {
 
   private updateNexuses() {
     const now = Date.now();
-    
+
     this.nexuses.forEach(nexus => {
       // Regenerate energy
       if (now - nexus.lastPulse > 5000) {
@@ -790,16 +821,16 @@ export class GameRoom extends EventEmitter {
 
   private endGame(reason: string) {
     this.gamePhase = 'ended';
-    
+
     // Calculate final scores
     let maxScore = 0;
     let winnerId: string | null = null;
-    
+
     for (const [playerId, player] of this.players) {
       // Final score calculation with multipliers
       const finalScore = player.score + (player.influence * 2) + (player.kills * 30) - (player.deaths * 10);
       player.score = Math.max(0, finalScore);
-      
+
       if (player.score > maxScore) {
         maxScore = player.score;
         winnerId = playerId;
@@ -810,7 +841,7 @@ export class GameRoom extends EventEmitter {
 
     this.broadcastEvent({
       type: 'game-ended',
-      data: { 
+      data: {
         winner: winnerId ? this.players.get(winnerId) : null,
         reason,
         finalScores: Array.from(this.players.values())
@@ -860,7 +891,7 @@ export class GameRoom extends EventEmitter {
 
     const powerUpTypes: PowerUp['type'][] = ['speed', 'shield', 'damage', 'health', 'energy'];
     const type = powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)];
-    
+
     // Spawn away from players
     let bestX = Math.random() * (GAME_WIDTH - 100) + 50;
     let bestY = Math.random() * (GAME_HEIGHT - 100) + 50;
@@ -870,19 +901,19 @@ export class GameRoom extends EventEmitter {
       const testX = Math.random() * (GAME_WIDTH - 100) + 50;
       const testY = Math.random() * (GAME_HEIGHT - 100) + 50;
       let minDist = Infinity;
-      
+
       for (const player of this.players.values()) {
         const dist = Math.sqrt((testX - player.x) ** 2 + (testY - player.y) ** 2);
         minDist = Math.min(minDist, dist);
       }
-      
+
       if (minDist > maxDist) {
         maxDist = minDist;
         bestX = testX;
         bestY = testY;
       }
     }
-    
+
     const powerUp: PowerUp = {
       id: uuidv4(),
       type,
@@ -933,14 +964,14 @@ export class GameRoom extends EventEmitter {
 
   private updatePlayerEffects() {
     const now = Date.now();
-    
+
     for (const player of this.players.values()) {
       const expiredPowerUps = player.activePowerUps.filter(p => p.expiresAt > 0 && now > p.expiresAt);
-      
+
       for (const powerUp of expiredPowerUps) {
         this.removePowerUpEffect(player, powerUp);
       }
-      
+
       player.activePowerUps = player.activePowerUps.filter(p => p.expiresAt === 0 || now <= p.expiresAt);
     }
   }
@@ -957,6 +988,7 @@ export class GameRoom extends EventEmitter {
   }
 
   private broadcastEvent(event: GameEvent) {
+    console.log(`[GameRoom] Broadcasting event ${event.type} to room ${this.roomId}`);
     this.io.to(this.roomId).emit('game-event', event);
   }
 
@@ -1032,7 +1064,7 @@ export class GameRoom extends EventEmitter {
   // Allow restarting a game
   restartGame() {
     if (this.gamePhase !== 'ended') return;
-    
+
     // Reset all player stats
     for (const player of this.players.values()) {
       player.x = 400;
