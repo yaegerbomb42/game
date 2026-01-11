@@ -41,8 +41,8 @@ const gameRooms = new Map<string, GameRoom>();
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
+  res.json({
+    status: 'ok',
     rooms: gameRooms.size,
     timestamp: new Date().toISOString()
   });
@@ -121,9 +121,9 @@ io.on('connection', (socket) => {
   console.log(`Player connected: ${socket.id}`);
 
   // Join or create a game room
-  socket.on('join-room', (data: { roomId?: string; playerName: string }) => {
-    const { roomId: rawRoomId, playerName } = data;
-    
+  socket.on('join-room', (data: { roomId?: string; playerName: string; abilityType?: string }) => {
+    const { roomId: rawRoomId, playerName, abilityType } = data;
+
     let room: GameRoom;
     let targetRoomId: string;
 
@@ -152,7 +152,7 @@ io.on('connection', (socket) => {
       targetRoomId = generateRoomId();
       room = new GameRoom(targetRoomId, io);
       gameRooms.set(targetRoomId, room);
-      
+
       // Clean up room when it's empty
       room.on('empty', () => {
         gameRooms.delete(targetRoomId);
@@ -160,7 +160,12 @@ io.on('connection', (socket) => {
       });
     }
 
-    const abilities: Player['abilityType'][] = ['dash', 'heal', 'shield', 'scan'];
+    const validAbilities = ['dash', 'heal', 'shield', 'scan'];
+    // Default to random if invalid or not provided
+    const selectedAbility = (abilityType && validAbilities.includes(abilityType))
+      ? abilityType
+      : validAbilities[room.getPlayerCount() % validAbilities.length];
+
     const player: Player = {
       id: socket.id,
       name: playerName,
@@ -199,22 +204,22 @@ io.on('connection', (socket) => {
       lastMovement: 0,
       // Respawn invincibility
       invincibleUntil: 0,
-      // Special ability - assign randomly for variety
-      abilityType: abilities[room.getPlayerCount() % abilities.length],
+      // Special ability
+      abilityType: selectedAbility as any,
       abilityCooldown: 15000, // 15 second cooldown
       lastAbilityUse: 0,
     };
 
     room.addPlayer(socket, player);
     socket.join(targetRoomId!);
-    
+
     socket.emit('joined-room', {
       roomId: targetRoomId,
       player,
       gameState: room.getSerializableGameState(),
     });
 
-    console.log(`Player ${playerName} joined room ${targetRoomId}`);
+    console.log(`Player ${playerName} joined room ${targetRoomId} with ability ${selectedAbility}`);
   });
 
   // Handle get game state request
@@ -245,7 +250,7 @@ io.on('connection', (socket) => {
     // Find a room with space that's waiting for players
     let bestRoom: GameRoom | null = null;
     let bestRoomIdFound: string | null = null;
-    
+
     for (const [rid, room] of gameRooms) {
       if (!room.isFull() && room.getPlayerCount() > 0 && room.getPlayerCount() < 6) {
         bestRoom = room;
@@ -253,7 +258,7 @@ io.on('connection', (socket) => {
         break;
       }
     }
-    
+
     if (bestRoom && bestRoomIdFound) {
       socket.emit('quick-match-found', { roomId: bestRoomIdFound });
     } else {

@@ -32,6 +32,7 @@ const Lobby = () => {
   const [socket, setSocket] = useState<Socket | null>(null)
   const [playerName, setPlayerName] = useState(localStorage.getItem('playerName') || '')
   const [roomId, setRoomId] = useState('')
+  const [selectedAbility, setSelectedAbility] = useState('dash')
   const [roomState, setRoomState] = useState<RoomState | null>(null)
   const [isConnecting, setIsConnecting] = useState(false)
   const [error, setError] = useState('')
@@ -160,7 +161,10 @@ const Lobby = () => {
     setIsConnecting(true)
     setError('')
     localStorage.setItem('playerName', playerName.trim())
-    socket?.emit('join-room', { playerName: playerName.trim() })
+    socket?.emit('join-room', { 
+      playerName: playerName.trim(),
+      abilityType: selectedAbility 
+    })
   }
 
   const handleJoinRoom = (targetRoomId?: string) => {
@@ -180,7 +184,8 @@ const Lobby = () => {
     localStorage.setItem('playerName', playerName.trim())
     socket?.emit('join-room', { 
       roomId: joinRoomId, 
-      playerName: playerName.trim() 
+      playerName: playerName.trim(),
+      abilityType: selectedAbility 
     })
   }
 
@@ -199,11 +204,15 @@ const Lobby = () => {
       const bestRoom = availableRooms.find(r => r.playerCount < 6) || availableRooms[0]
       socket?.emit('join-room', { 
         roomId: bestRoom.roomId, 
-        playerName: playerName.trim() 
+        playerName: playerName.trim(),
+        abilityType: selectedAbility
       })
     } else {
       // Create new room
-      socket?.emit('join-room', { playerName: playerName.trim() })
+      socket?.emit('join-room', { 
+        playerName: playerName.trim(),
+        abilityType: selectedAbility 
+      })
     }
   }
 
@@ -318,6 +327,46 @@ const Lobby = () => {
             disabled={isConnecting}
             style={{ fontSize: '16px', padding: '12px' }}
           />
+        </div>
+
+        {/* Ability Selection */}
+        <div style={{ marginBottom: '20px' }}>
+          <label style={{ display: 'block', marginBottom: '10px' }}>Select Ability</label>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
+            {Object.entries(ABILITY_INFO).map(([type, info]) => (
+              <button
+                key={type}
+                onClick={() => setSelectedAbility(type)}
+                disabled={isConnecting}
+                style={{
+                  background: selectedAbility === type ? 'rgba(52, 152, 219, 0.3)' : 'rgba(255, 255, 255, 0.05)',
+                  border: selectedAbility === type ? '2px solid #3498db' : '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: '8px',
+                  padding: '10px 5px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '5px',
+                  transition: 'all 0.2s'
+                }}
+              >
+                <span style={{ fontSize: '24px' }}>{info.icon}</span>
+                <span style={{ fontSize: '12px', fontWeight: selectedAbility === type ? 'bold' : 'normal' }}>{info.name}</span>
+              </button>
+            ))}
+          </div>
+          <div style={{ 
+            fontSize: '12px', 
+            marginTop: '8px', 
+            opacity: 0.7, 
+            textAlign: 'center',
+            background: 'rgba(0,0,0,0.2)',
+            padding: '8px',
+            borderRadius: '4px'
+          }}>
+            {ABILITY_INFO[selectedAbility].description}
+          </div>
         </div>
 
         {/* Quick Match - Primary CTA */}
