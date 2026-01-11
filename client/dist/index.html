@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Nexus Wars - 2D Multiplayer Strategy Game</title>
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://localhost:3001 http://localhost:3001; img-src 'self' data: blob:;">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss: http: https:; img-src 'self' data: blob:;">
     <style>
       body {
         margin: 0;
@@ -19,7 +19,10 @@
         height: 100vh;
       }
     </style>
-    <script type="module" crossorigin src="/assets/index-Bx2xjZ4C.js"></script>
+    <script type="module" crossorigin src="/assets/index-ckoa4h8O.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/phaser-Chk84G3K.js">
+    <link rel="modulepreload" crossorigin href="/assets/react-B4W3H5Ub.js">
+    <link rel="modulepreload" crossorigin href="/assets/socketio-qXw27f4H.js">
     <link rel="stylesheet" crossorigin href="/assets/index-DIcQKg0F.css">
   </head>
   <body>

@@ -97,6 +97,7 @@ export declare class GameRoom extends EventEmitter {
     hasPlayer(playerId: string): boolean;
     getPlayer(playerId: string): Player | undefined;
     getRoomId(): string;
+    getGamePhase(): GameState['gamePhase'];
     restartGame(): void;
 }
 //# sourceMappingURL=GameRoom.d.ts.map
