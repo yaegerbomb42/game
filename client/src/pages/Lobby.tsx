@@ -224,6 +224,11 @@ const Lobby = () => {
       return
     }
 
+    if (!socket || !socket.connected) {
+      setError('Not connected to server. Please wait...')
+      return
+    }
+
     setIsConnecting(true)
     setError('')
     localStorage.setItem('playerName', playerName.trim())

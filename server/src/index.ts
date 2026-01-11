@@ -244,7 +244,7 @@ io.on('connection', (socket) => {
     if (bestRoom && bestRoomIdFound) {
       socket.emit('quick-match-found', { roomId: bestRoomIdFound, playerCount: bestRoom.getPlayerCount() });
     } else {
-      // Create new room
+      // Create new room - client will join
       const newRoomId = generateRoomId();
       socket.emit('quick-match-found', { roomId: newRoomId, isNew: true });
     }

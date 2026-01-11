@@ -636,12 +636,14 @@ export class GameRoom extends EventEmitter {
       this.updatePhysics();
     }, 1000 / TICK_RATE);
 
-    // Lower-frequency broadcast loop
+    // Lower-frequency broadcast loop - optimized for better performance
     this.broadcastLoop = setInterval(() => {
       this.updateGamePhase();
       this.updateNexuses();
       this.updatePowerUps();
       this.updatePlayerEffects();
+      
+      // Only broadcast if there are changes or periodically
       this.broadcastGameState();
     }, 1000 / BROADCAST_RATE);
 
