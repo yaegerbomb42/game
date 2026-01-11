@@ -196,20 +196,26 @@ export class GameRoom extends EventEmitter {
     const distance = Math.sqrt((player.x - nexus.x) ** 2 + (player.y - nexus.y) ** 2);
     if (distance > 60) return;
 
-    // Harvest energy
-    const harvestAmount = Math.min(15, nexus.energy);
-    nexus.energy -= harvestAmount;
+    // Harvest energy with bonus for owned nexuses
+    const baseHarvestAmount = Math.min(15, nexus.energy);
+    const ownershipBonus = nexus.controlledBy === player.id ? 5 : 0;
+    const harvestAmount = baseHarvestAmount + ownershipBonus;
+    
+    nexus.energy -= baseHarvestAmount;
     player.energy += harvestAmount;
 
-    // Increase capture progress
+    // Increase capture progress with combo multiplier
     const currentProgress = nexus.contestProgress.get(player.id) || 0;
-    const progressGain = 20 * nexus.captureRate;
+    const comboMultiplier = Math.min(1 + (player.comboCount * 0.1), 2);
+    const progressGain = 20 * nexus.captureRate * comboMultiplier;
     nexus.contestProgress.set(player.id, Math.min(100, currentProgress + progressGain));
 
     this.updateNexusControl(nexus);
 
-    // Score for harvesting
-    player.score += 5;
+    // Score for harvesting with bonus scoring
+    const baseScore = 5;
+    const comboBonus = player.comboCount > 1 ? player.comboCount : 0;
+    player.score += baseScore + comboBonus;
     this.updateCombo(player, 'harvest');
   }
 
@@ -351,10 +357,28 @@ export class GameRoom extends EventEmitter {
     const distance = Math.sqrt((player.x - targetPlayer.x) ** 2 + (player.y - targetPlayer.y) ** 2);
     if (distance > player.attackRange) return;
 
-    // Calculate damage with combo bonus
+    // Calculate damage with combo bonus and distance scaling
     let damage = player.attackPower;
+    
+    // Combo bonus: more damage with consecutive actions
     if (player.comboCount > 1) {
-      damage += Math.min(player.comboCount * 3, 15);
+      damage += Math.min(player.comboCount * 3, 20);
+    }
+    
+    // Distance bonus: closer attacks deal more damage
+    const distanceRatio = distance / player.attackRange;
+    if (distanceRatio < 0.5) {
+      damage = Math.floor(damage * 1.3); // 30% more damage at close range
+    }
+    
+    // Critical hit chance (10% for high combo)
+    if (player.comboCount >= 3 && Math.random() < 0.1) {
+      damage = Math.floor(damage * 1.5);
+      this.broadcastEvent({
+        type: 'critical-hit',
+        data: { attackerId: player.id, targetId: targetPlayer.id },
+        timestamp: now,
+      });
     }
 
     // Check for shield power-up
@@ -366,10 +390,13 @@ export class GameRoom extends EventEmitter {
     targetPlayer.health -= damage;
     player.damageDealt += damage;
     player.lastAttack = now;
-    player.score += Math.floor(damage / 2);
+    
+    // Better scoring for attacks
+    const attackScore = Math.floor(damage / 2) + (player.comboCount > 1 ? player.comboCount * 2 : 0);
+    player.score += attackScore;
 
-    // Knockback effect
-    const knockbackForce = 30;
+    // Improved knockback with direction consideration
+    const knockbackForce = 35 + (damage * 0.5); // Stronger hits = more knockback
     const angle = Math.atan2(targetPlayer.y - player.y, targetPlayer.x - player.x);
     targetPlayer.x = Math.max(20, Math.min(GAME_WIDTH - 20, targetPlayer.x + Math.cos(angle) * knockbackForce));
     targetPlayer.y = Math.max(20, Math.min(GAME_HEIGHT - 20, targetPlayer.y + Math.sin(angle) * knockbackForce));
@@ -858,10 +885,28 @@ export class GameRoom extends EventEmitter {
   }
 
   private spawnPowerUp() {
-    if (this.powerUps.length >= 6) return;
+    if (this.powerUps.length >= 8) return; // Increased max power-ups
 
-    const powerUpTypes: PowerUp['type'][] = ['speed', 'shield', 'damage', 'health', 'energy'];
-    const type = powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)];
+    // Weighted power-up spawning for better balance
+    const powerUpWeights: Array<{type: PowerUp['type']; weight: number}> = [
+      { type: 'speed', weight: 20 },
+      { type: 'shield', weight: 25 },
+      { type: 'damage', weight: 20 },
+      { type: 'health', weight: 30 }, // Health more common
+      { type: 'energy', weight: 25 },
+    ];
+    
+    const totalWeight = powerUpWeights.reduce((sum, item) => sum + item.weight, 0);
+    let random = Math.random() * totalWeight;
+    let type: PowerUp['type'] = 'health';
+    
+    for (const item of powerUpWeights) {
+      random -= item.weight;
+      if (random <= 0) {
+        type = item.type;
+        break;
+      }
+    }
     
     // Spawn away from players
     let bestX = Math.random() * (GAME_WIDTH - 100) + 50;
@@ -918,11 +963,11 @@ export class GameRoom extends EventEmitter {
 
   private getPowerUpEffect(type: PowerUp['type']): number {
     switch (type) {
-      case 'speed': return 80;
-      case 'shield': return 50;
-      case 'damage': return 20;
-      case 'health': return 60;
-      case 'energy': return 40;
+      case 'speed': return 90; // Increased from 80
+      case 'shield': return 60; // Increased from 50
+      case 'damage': return 25; // Increased from 20
+      case 'health': return 70; // Increased from 60
+      case 'energy': return 50; // Increased from 40
       default: return 10;
     }
   }

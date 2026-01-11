@@ -128,10 +128,10 @@ Configuration file included: `server/fly.toml`
 
 ### Environment Variables
 
-**Client (.env)**
-```
-VITE_SERVER_URL=https://your-server-domain.com
-```
+**Backend (Railway):**
+```bash
+# Install Railway CLI
+npm i -g @railway/cli
 
 **Server (.env)**
 ```
@@ -140,18 +140,26 @@ NODE_ENV=production
 ALLOWED_ORIGINS=https://your-frontend-domain.vercel.app
 ```
 
-### Build for Production
-
+**Frontend (Vercel):**
 ```bash
-# Build both client and server
-npm run build
+# Install Vercel CLI
+npm i -g vercel
 
-# Start production server
-npm start
+# Deploy
+cd client && vercel --prod
 ```
 
-### Docker Deployment
+Set environment variable `VITE_SERVER_URL` to your Railway backend URL.
 
+#### Option 2: All-in-One Vercel
+Suitable for testing, but WebSocket performance may be limited.
+
+```bash
+# Deploy from root
+vercel --prod
+```
+
+#### Option 3: Docker Deployment
 ```bash
 # Build and run with Docker Compose
 docker-compose up --build

@@ -258,12 +258,40 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Handle disconnection
+  // Handle disconnection with grace period for reconnection
   socket.on('disconnect', () => {
     console.log(`Player disconnected: ${socket.id}`);
     const room = findPlayerRoom(socket.id);
     if (room) {
-      room.removePlayer(socket.id);
+      // Store player data for potential reconnection
+      const player = room.getPlayer(socket.id);
+      if (player) {
+        // Give player 30 seconds to reconnect before removal
+        setTimeout(() => {
+          // Check if player is still disconnected
+          const currentRoom = findPlayerRoom(socket.id);
+          if (currentRoom && !socket.connected) {
+            currentRoom.removePlayer(socket.id);
+          }
+        }, 30000);
+      } else {
+        room.removePlayer(socket.id);
+      }
+    }
+  });
+
+  // Handle reconnection attempts
+  socket.on('reconnect-attempt', (data: { playerId: string; roomId: string }) => {
+    const room = gameRooms.get(data.roomId);
+    if (room && room.hasPlayer(data.playerId)) {
+      const player = room.getPlayer(data.playerId);
+      if (player) {
+        // Update socket reference
+        socket.emit('reconnected', {
+          player,
+          gameState: room.getSerializableGameState(),
+        });
+      }
     }
   });
 });
