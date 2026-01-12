@@ -1,0 +1,11 @@
+# Rizzler: AI-powered merge conflict resolution
+# Usage: git config merge.rizzler.driver "rizzler %O %A %B %P"
+
+*.ts merge=rizzler
+*.tsx merge=rizzler
+*.js merge=rizzler
+*.jsx merge=rizzler
+*.json merge=rizzler
+*.css merge=rizzler
+*.html merge=rizzler
+*.md merge=rizzler

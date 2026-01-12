@@ -144,11 +144,6 @@ h6 {
   margin-bottom: 10px;
 }
 
-.health-bar-fill {
-  height: 100%;
-  transition: width 0.3s ease, background-color 0.3s;
-}
-
 /* Lobby Styles */
 .lobby-container {
   display: flex;
@@ -427,6 +422,15 @@ kbd {
   color: var(--text-main);
 }
 
+.health-bar-fill {
+  height: 100%;
+  width: var(--health-percent, 100%);
+  background: var(--health-color, var(--success));
+  box-shadow: 0 0 10px var(--health-color, var(--success));
+  transition: width 0.3s ease, background 0.3s ease;
+  border-radius: 4px;
+}
+
 .kill-streak {
   margin-top: 10px;
   background: rgba(255, 51, 102, 0.3);
@@ -497,10 +501,30 @@ kbd {
 }
 
 .player-avatar {
-  width: 24px;
-  height: 24px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   border: 2px solid white;
+  background-color: var(--player-color, var(--primary));
+  box-shadow: 0 0 10px var(--player-color, var(--primary));
+}
+
+.player-avatar-small {
+  width: 20px;
+  height: 20px;
+  background-color: var(--player-color, var(--primary));
+  box-shadow: 0 0 5px var(--player-color, var(--primary));
+}
+
+.avatar-large {
+  width: 60px;
+  height: 60px;
+  background-color: var(--player-color, var(--primary));
+  box-shadow: 0 0 15px var(--player-color, var(--primary));
+}
+
+.mr-10 {
+  margin-right: 10px;
 }
 
 .player-item-content {

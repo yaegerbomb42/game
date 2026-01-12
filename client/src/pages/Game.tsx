@@ -244,10 +244,7 @@ const Game = () => {
           <div className="flex-gap flex-item-center">
             <div
               className="player-list-item-content avatar-large"
-              style={{
-                backgroundColor: currentPlayer.color,
-                boxShadow: `0 0 10px ${currentPlayer.color}`
-              }}
+              style={{ '--player-color': currentPlayer.color } as React.CSSProperties}
             />
             <div>
               <h3 className="hud-panel-title">{currentPlayer.name}</h3>
@@ -265,10 +262,9 @@ const Game = () => {
               <div
                 className="health-bar-fill"
                 style={{
-                  width: `${(currentPlayer.health / currentPlayer.maxHealth) * 100}%`,
-                  background: currentPlayer.health > 50 ? 'var(--success)' : currentPlayer.health > 25 ? 'var(--warning)' : 'var(--danger)',
-                  boxShadow: `0 0 10px ${currentPlayer.health > 50 ? 'var(--success)' : 'var(--danger)'}`
-                }}
+                  '--health-percent': `${(currentPlayer.health / currentPlayer.maxHealth) * 100}%`,
+                  '--health-color': currentPlayer.health > 50 ? 'var(--success)' : currentPlayer.health > 25 ? 'var(--warning)' : 'var(--danger)'
+                } as React.CSSProperties}
               />
             </div>
           </div>
@@ -315,10 +311,8 @@ const Game = () => {
                 <span className="rank">{idx === 0 ? '1' : idx === 1 ? '2' : idx === 2 ? '3' : idx + 1}</span>
                 <div
                   className="player-list-item-content player-avatar-small"
-                  style={{
-                    backgroundColor: player.color,
-                    boxShadow: `0 0 5px ${player.color}`
-                  }} />
+                  style={{ '--player-color': player.color } as React.CSSProperties}
+                />
                 <span className={`name ${player.id === currentPlayer.id ? 'text-highlight' : ''}`}>
                   {player.name}
                 </span>

@@ -317,10 +317,10 @@ const Lobby = () => {
                     <div className="player-item-content player-item-wrapper">
                       <div
                         className="player-avatar"
-                        style={{ backgroundColor: player.color, boxShadow: `0 0 10px ${player.color}` }}
+                        style={{ '--player-color': player.color } as React.CSSProperties}
                       />
                       <span className="player-name">{player.name}</span>
-                      <span className="text-small" style={{ color: isPlayerReady ? 'var(--success)' : 'var(--text-dim)', fontWeight: 'bold', marginRight: '10px' }}>
+                      <span className={`text-small status-text-bold mr-10 ${isPlayerReady ? 'text-success' : 'text-dim'}`}>
                         {isPlayerReady ? 'READY' : 'WAITING'}
                       </span>
                       <span className="text-small text-primary">
