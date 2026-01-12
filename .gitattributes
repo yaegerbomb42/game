@@ -9,3 +9,9 @@
 *.css merge=rizzler
 *.html merge=rizzler
 *.md merge=rizzler
+
+# Additional configuration from rizzler
+*.ts,tsx,js,jsx,css merge=rizzler
+
+# Additional configuration from rizzler
+*.ts,tsx,js,jsx,css merge=rizzler
