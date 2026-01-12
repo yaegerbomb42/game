@@ -37,6 +37,12 @@ async function runTest() {
 
         await new Promise(resolve => setTimeout(resolve, 500));
 
+        // Toggle ready for Client 1
+        console.log('Client 1 toggling ready...');
+        client1.emit('toggle-ready', roomId);
+
+        await new Promise(resolve => setTimeout(resolve, 200));
+
         // Client 2 joins room
         console.log(`Client 2 joining room ${roomId}...`);
         client2.emit('join-room', {
@@ -45,6 +51,12 @@ async function runTest() {
             abilityType: 'dash',
             userId: 'user2'
         });
+
+        await new Promise(resolve => setTimeout(resolve, 200));
+
+        // Toggle ready for Client 2
+        console.log('Client 2 toggling ready...');
+        client2.emit('toggle-ready', roomId);
 
         // Wait for game start
         console.log('Waiting for game start event...');

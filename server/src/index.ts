@@ -211,6 +211,7 @@ io.on('connection', (socket) => {
       abilityType: selectedAbility as any,
       abilityCooldown: 15000, // 15 second cooldown
       lastAbilityUse: 0,
+      isReady: false,
     };
 
     socket.join(targetRoomId!);

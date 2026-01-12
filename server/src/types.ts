@@ -13,7 +13,7 @@ export interface Player {
   color: string;
   isAlive: boolean;
   isConnected: boolean; // Track connection status
-  isReady?: boolean; // Track if player is ready
+  isReady: boolean; // Track if player is ready
   lastAction: number;
   // Combat properties
   health: number;
