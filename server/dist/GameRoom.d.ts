@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import { Server, Socket } from 'socket.io';
-import { Player, Nexus, GameState, PlayerAction, PowerUp } from './types';
+import { Player, GameState, PlayerAction, PowerUp } from './types';
 export declare class GameRoom extends EventEmitter {
     private roomId;
     private io;
@@ -13,14 +13,19 @@ export declare class GameRoom extends EventEmitter {
     private gameStartTime;
     private winner;
     private gameLoop;
+    private broadcastLoop;
     private powerUpSpawnTimer;
+    private matchNumber;
     constructor(roomId: string, io: Server);
     private initializeNexuses;
     addPlayer(socket: Socket, player: Player): void;
+    private findSafeSpawnPosition;
     removePlayer(playerId: string): void;
     handlePlayerAction(playerId: string, action: PlayerAction): void;
     private handleMove;
     private handleHarvest;
+    private updateNexusControl;
+    private updateCombo;
     private handleDeployBeacon;
     private handleBoostNexus;
     private handleAttack;
@@ -30,15 +35,20 @@ export declare class GameRoom extends EventEmitter {
     private handleCollectPowerUp;
     private applyPowerUpEffect;
     private handleUseAbility;
+    private executeDash;
+    private executeHeal;
+    private executeShield;
+    private executeScan;
     private startGame;
+    private updatePhysics;
     private updateGamePhase;
-    private updateScores;
+    private broadcastPhaseChange;
     private updateNexuses;
     private triggerEnergyPulse;
     private endGame;
+    private stopGameLoops;
     private startPowerUpSpawning;
     private spawnPowerUp;
-    private isNearNexus;
     private getPowerUpDuration;
     private getPowerUpEffect;
     private updatePowerUps;
@@ -51,7 +61,20 @@ export declare class GameRoom extends EventEmitter {
         players: {
             [k: string]: Player;
         };
-        nexuses: Nexus[];
+        nexuses: {
+            contestProgress: {
+                [k: string]: number;
+            };
+            id: string;
+            x: number;
+            y: number;
+            energy: number;
+            controlledBy: string | null;
+            lastPulse: number;
+            chargeLevel: number;
+            isContested: boolean;
+            captureRate: number;
+        }[];
         powerUps: PowerUp[];
         gamePhase: "waiting" | "spawn" | "expansion" | "conflict" | "pulse" | "ended";
         phaseStartTime: number;
@@ -63,7 +86,10 @@ export declare class GameRoom extends EventEmitter {
             score: number;
             kills: number;
             deaths: number;
+            killStreak: number;
+            damageDealt: number;
         }[];
+        matchNumber: number;
     };
     private generateLeaderboard;
     getPlayerCount(): number;
@@ -71,5 +97,7 @@ export declare class GameRoom extends EventEmitter {
     hasPlayer(playerId: string): boolean;
     getPlayer(playerId: string): Player | undefined;
     getRoomId(): string;
+    getGamePhase(): GameState['gamePhase'];
+    restartGame(): void;
 }
 //# sourceMappingURL=GameRoom.d.ts.map

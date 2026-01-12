@@ -15,12 +15,35 @@
     "build:client": "cd client && npm run build",
     "build:server": "cd server && npm run build",
     "start": "cd server && npm start",
-    "install:all": "npm install && cd client && npm install && cd ../server && npm install"
+    "install:all": "npm install && cd client && npm install && cd ../server && npm install",
+    "clean": "rm -rf node_modules client/node_modules server/node_modules client/dist server/dist",
+    "type-check": "cd client && npm run type-check && cd ../server && npm run type-check"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
   },
   "engines": {
-    "node": ">=18.0.0"
-  }
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/nexus-wars.git"
+  },
+  "keywords": [
+    "game",
+    "multiplayer",
+    "strategy",
+    "websocket",
+    "real-time",
+    "phaser",
+    "react",
+    "typescript"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/yourusername/nexus-wars/issues"
+  },
+  "homepage": "https://github.com/yourusername/nexus-wars#readme"
 }

@@ -9,6 +9,8 @@ interface Player {
   name: string
   x: number
   y: number
+  targetX: number
+  targetY: number
   energy: number
   influence: number
   color: string
@@ -17,42 +19,52 @@ interface Player {
   maxHealth: number
   attackPower: number
   attackRange: number
-  lastAttack: number
-  attackCooldown: number
   kills: number
   deaths: number
   score: number
-  activePowerUps: any[]
+  damageDealt: number
+  nexusesCaptured: number
+  abilityType: string
+  abilityCooldown: number
+  lastAbilityUse: number
+  killStreak: number
+  comboCount: number
+  invincibleUntil: number
+  activePowerUps: unknown[]
   speed: number
-  lastMovement: number
 }
 
 interface GameState {
   players: Record<string, Player>
   nexuses: any[]
-  powerUps: any[]
   gamePhase: string
   phaseStartTime: number
   gameStartTime: number
   winner: string | null
-  leaderboard: Array<{
-    playerId: string
-    playerName: string
-    score: number
-    kills: number
-    deaths: number
-  }>
 }
 
 interface GameOverData {
   winner: Player | null
   reason: string
+  matchDuration: number
   finalScores: Array<{
     id: string
     name: string
+    score: number
     influence: number
     energy: number
+    kills: number
+    deaths: number
+    damageDealt: number
+    nexusesCaptured: number
   }>
+}
+
+const ABILITY_INFO: Record<string, { icon: string; name: string }> = {
+  dash: { icon: '⚡', name: 'Dash' },
+  heal: { icon: '💚', name: 'Heal' },
+  shield: { icon: '🛡️', name: 'Shield' },
+  scan: { icon: '👁️', name: 'Scan' },
 }
 
 const Game = () => {
@@ -65,6 +77,7 @@ const Game = () => {
   const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null)
   const [gameOverData, setGameOverData] = useState<GameOverData | null>(null)
   const [timeRemaining, setTimeRemaining] = useState(0)
+  const [showStats, setShowStats] = useState(false)
 
   useEffect(() => {
     if (!roomId) {
@@ -72,38 +85,40 @@ const Game = () => {
       return
     }
 
-    // Use existing socket from navigation state or create new one
     const existingSocket = location.state?.socket
-    const socket = existingSocket || io(import.meta.env.VITE_SERVER_URL || 'http://localhost:3001')
+    const socket = existingSocket || io(import.meta.env.VITE_SERVER_URL || 'http://localhost:3001', {
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      reconnectionAttempts: 5,
+      transports: ['websocket', 'polling'],
+    })
     socketRef.current = socket
 
     if (!existingSocket) {
       socket.on('connect', () => {
-        console.log('Connected to game server')
-        // Try to rejoin the room (in case of reconnection)
         const playerName = localStorage.getItem('playerName') || 'Player'
-        socket.emit('join-room', { roomId, playerName })
+        const userId = localStorage.getItem('userId')
+        socket.emit('join-room', { roomId, playerName, userId })
       })
     } else {
-      console.log('Using existing socket connection for game')
-      // If we have an existing socket, we should already be in the room
-      // Request current game state
       socket.emit('get-game-state')
     }
 
-    socket.on('joined-room', (data: { roomId: string; player: Player; gameState: GameState }) => {
-      console.log('Rejoined room:', data)
+    socket.on('joined-room', (data: { gameState: GameState; player: Player; roomId: string }) => {
       setGameState(data.gameState)
       setCurrentPlayer(data.player)
     })
 
     socket.on('game-state-update', (newGameState: GameState) => {
       setGameState(newGameState)
+      // Update current player from new state
+      if (currentPlayer && newGameState.players[currentPlayer.id]) {
+        setCurrentPlayer(newGameState.players[currentPlayer.id])
+      }
     })
 
-    socket.on('game-event', (event: { type: string; data: any }) => {
-      console.log('Game event:', event)
-      
+    socket.on('game-event', (event: { type: string; data: GameOverData }) => {
       if (event.type === 'game-ended') {
         setGameOverData(event.data)
       }
@@ -114,12 +129,24 @@ const Game = () => {
       navigate('/')
     })
 
+    socket.on('connect_error', (err: unknown) => {
+      console.error('Game connection error:', err)
+      // Try to reconnect
+      setTimeout(() => {
+        socket.connect()
+      }, 2000)
+    })
+
     socket.on('disconnect', () => {
       console.log('Disconnected from game server')
     })
 
+    socket.on('reconnect', () => {
+      console.log('Reconnected to game server')
+      socket.emit('get-game-state')
+    })
+
     return () => {
-      // Only close socket if we created it (not passed from lobby)
       if (!existingSocket) {
         socket.close()
       }
@@ -128,13 +155,12 @@ const Game = () => {
 
   useEffect(() => {
     if (gameState && currentPlayer && !gameRef.current) {
-      // Initialize Phaser game
       const config: Phaser.Types.Core.GameConfig = {
         type: Phaser.AUTO,
         width: 800,
         height: 600,
         parent: 'game-container',
-        backgroundColor: '#2c3e50',
+        backgroundColor: '#1a1a2e',
         scene: GameScene,
         physics: {
           default: 'arcade',
@@ -146,12 +172,11 @@ const Game = () => {
       }
 
       gameRef.current = new Phaser.Game(config)
-      
-      // Pass socket and game data to the scene
+
       gameRef.current.events.once('ready', () => {
         const scene = gameRef.current?.scene.getScene('GameScene') as GameScene
-        if (scene) {
-          scene.initializeGame(socketRef.current!, currentPlayer, gameState)
+        if (scene && socketRef.current) {
+          scene.initializeGame(socketRef.current, currentPlayer, gameState as any)
         }
       })
     }
@@ -164,16 +189,14 @@ const Game = () => {
     }
   }, [gameState, currentPlayer])
 
-  // Update time remaining
   useEffect(() => {
     if (!gameState || gameState.gamePhase === 'waiting' || gameState.gamePhase === 'ended') {
       return
     }
 
     const interval = setInterval(() => {
-      const now = Date.now()
-      const elapsed = now - gameState.phaseStartTime
-      
+      const elapsed = Date.now() - gameState.phaseStartTime
+
       let phaseDuration = 0
       switch (gameState.gamePhase) {
         case 'spawn': phaseDuration = 10000; break
@@ -181,9 +204,8 @@ const Game = () => {
         case 'conflict': phaseDuration = 30000; break
         case 'pulse': phaseDuration = 15000; break
       }
-      
-      const remaining = Math.max(0, phaseDuration - elapsed)
-      setTimeRemaining(remaining)
+
+      setTimeRemaining(Math.max(0, phaseDuration - elapsed))
     }, 100)
 
     return () => clearInterval(interval)
@@ -193,19 +215,30 @@ const Game = () => {
     navigate('/')
   }
 
+  const handlePlayAgain = () => {
+    socketRef.current?.emit('restart-game')
+    setGameOverData(null)
+  }
+
   const formatTime = (ms: number) => {
     const seconds = Math.ceil(ms / 1000)
     return `${seconds}s`
   }
 
-  const getPhaseDescription = (phase: string) => {
+  const formatDuration = (ms: number) => {
+    const minutes = Math.floor(ms / 60000)
+    const seconds = Math.floor((ms % 60000) / 1000)
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`
+  }
+
+  const getPhaseInfo = (phase: string) => {
     switch (phase) {
-      case 'spawn': return 'Spawn Phase - Scout the battlefield!'
-      case 'expansion': return 'Expansion Phase - Claim nexuses!'
-      case 'conflict': return 'Conflict Phase - Battle for control!'
-      case 'pulse': return 'Pulse Phase - Final energy burst!'
-      case 'ended': return 'Game Over'
-      default: return 'Waiting for players...'
+      case 'spawn': return { text: 'Spawn Phase', desc: 'Scout the battlefield!', color: '#3498db' }
+      case 'expansion': return { text: 'Expansion Phase', desc: 'Claim nexuses!', color: '#27ae60' }
+      case 'conflict': return { text: 'Conflict Phase', desc: 'Battle for control!', color: '#e74c3c' }
+      case 'pulse': return { text: 'Pulse Phase', desc: 'Final energy burst!', color: '#f39c12' }
+      case 'ended': return { text: 'Game Over', desc: '', color: '#9b59b6' }
+      default: return { text: 'Waiting...', desc: 'for players', color: '#95a5a6' }
     }
   }
 
@@ -220,81 +253,202 @@ const Game = () => {
     )
   }
 
+  const phaseInfo = getPhaseInfo(gameState.gamePhase)
+  const ability = ABILITY_INFO[currentPlayer.abilityType] || ABILITY_INFO.dash
+  const abilityCooldown = Math.max(0, (currentPlayer.lastAbilityUse + currentPlayer.abilityCooldown) - Date.now())
+
   return (
     <div className="game-container">
       <div id="game-container" className="game-canvas"></div>
-      
+
       <div className="ui-overlay">
-        {/* HUD */}
-        <div className="hud">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-            <div style={{ 
-              width: '24px', 
-              height: '24px', 
-              backgroundColor: currentPlayer.color,
-              borderRadius: '50%',
-              border: '3px solid gold'
-            }}></div>
-            <h3 style={{ margin: 0 }}>{currentPlayer.name}</h3>
+        {/* Player Stats HUD */}
+        <div className="hud-panel hud-stats">
+          <div className="flex-gap flex-item-center">
+            <div
+              className="player-list-item-content avatar-large"
+              style={{ '--player-color': currentPlayer.color } as React.CSSProperties}
+            />
+            <div>
+              <h3 className="hud-panel-title">{currentPlayer.name}</h3>
+              <span className="text-small text-primary">{ability.icon} {ability.name}</span>
+            </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '14px' }}>
-            <div>⚡ {currentPlayer.energy}</div>
-            <div>🎯 {currentPlayer.influence}</div>
+
+          {/* Health Bar */}
+          <div className="mb-4">
+            <div className="health-label">
+              <span>Shield Integrity</span>
+              <span>{Math.floor(currentPlayer.health)}/{currentPlayer.maxHealth}</span>
+            </div>
+            <div className="health-bar-container">
+              <div
+                className="health-bar-fill"
+                style={{
+                  '--health-percent': `${(currentPlayer.health / currentPlayer.maxHealth) * 100}%`,
+                  '--health-color': currentPlayer.health > 50 ? 'var(--success)' : currentPlayer.health > 25 ? 'var(--warning)' : 'var(--danger)'
+                } as React.CSSProperties}
+              />
+            </div>
           </div>
+
+          <div className="stats-grid">
+            <div className="stat-value">⚡ {Math.floor(currentPlayer.energy)}</div>
+            <div className="stat-value">🎯 {Math.floor(currentPlayer.influence)}</div>
+            <div className="stat-value">💀 {currentPlayer.kills}</div>
+            <div className="stat-value">☠️ {currentPlayer.deaths}</div>
+          </div>
+
+          <div className="score-display">
+            {Math.floor(currentPlayer.score)}
+          </div>
+
+          {currentPlayer.killStreak >= 3 && (
+            <div className="kill-streak">
+              🔥 {currentPlayer.killStreak} KILL STREAK
+            </div>
+          )}
         </div>
 
         {/* Phase Indicator */}
-        <div className="phase-indicator">
-          <h3>{getPhaseDescription(gameState.gamePhase)}</h3>
+        <div className="phase-indicator" style={{ borderBottomColor: phaseInfo.color }}>
+          <h3 className="phase-title" style={{ color: phaseInfo.color, textShadow: `0 0 10px ${phaseInfo.color}` }}>{phaseInfo.text}</h3>
+          <div className="text-dim text-small phase-desc">{phaseInfo.desc}</div>
           {timeRemaining > 0 && (
-            <div style={{ fontSize: '24px', fontWeight: 'bold' }}>
+            <div className={`phase-timer ${timeRemaining < 10000 ? 'timer-danger' : 'timer-normal'}`}>
               {formatTime(timeRemaining)}
             </div>
           )}
         </div>
 
-        {/* Player List */}
-        <div className="player-list">
-          <h4>Players ({Object.values(gameState.players).length})</h4>
+        {/* Mini Player List */}
+        <div className="hud-panel leaderboard border-bottom-none">
+          <div className="text-small text-dim leaderboard-header">
+            AGENTS ACTIVE ({Object.keys(gameState.players).length})
+          </div>
           {Object.values(gameState.players)
-            .sort((a, b) => b.influence - a.influence)
-            .map((player) => (
-            <div key={player.id} className="player-item">
-              <div 
-                className="player-color" 
-                style={{ backgroundColor: player.color }}
-              ></div>
-              <div style={{ flex: 1 }}>
-                <div>{player.name}</div>
-                <div style={{ fontSize: '12px', opacity: 0.8 }}>
-                  ⚡{player.energy} 🎯{player.influence}
-                </div>
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 5)
+            .map((player, idx) => (
+              <div key={player.id} className={`player-list-item ${!player.isAlive ? 'player-dead' : ''}`}>
+                <span className="rank">{idx === 0 ? '1' : idx === 1 ? '2' : idx === 2 ? '3' : idx + 1}</span>
+                <div
+                  className="player-list-item-content player-avatar-small"
+                  style={{ '--player-color': player.color } as React.CSSProperties}
+                />
+                <span className={`name ${player.id === currentPlayer.id ? 'text-highlight' : ''}`}>
+                  {player.name}
+                </span>
+                <span className="score">{Math.floor(player.score)}</span>
               </div>
-            </div>
-          ))}
+            ))}
         </div>
 
-        {/* Controls Help */}
+<<<<<<< HEAD
+        {/* Controls Help - Enhanced */}
         <div style={{
           position: 'absolute',
-          bottom: '20px',
-          right: '20px',
-          background: 'rgba(0, 0, 0, 0.85)',
-          padding: '12px 15px',
-          borderRadius: '8px',
+          bottom: '10px',
+          right: '10px',
+          background: 'linear-gradient(135deg, rgba(0, 0, 0, 0.9), rgba(26, 26, 46, 0.9))',
+          padding: '14px',
+          borderRadius: '10px',
           fontSize: '11px',
-          maxWidth: '180px',
-          border: '1px solid rgba(255,255,255,0.2)'
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+          boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)'
         }}>
-          <h4 style={{ margin: '0 0 8px 0', color: '#ffd700' }}>⌨️ Controls</h4>
-          <div style={{ display: 'grid', gap: '4px' }}>
-            <div><span style={{color: '#4ecdc4'}}>WASD</span> - Move</div>
-            <div><span style={{color: '#4ecdc4'}}>E</span> - Harvest nexus</div>
-            <div><span style={{color: '#4ecdc4'}}>Space</span> - Deploy beacon</div>
-            <div><span style={{color: '#4ecdc4'}}>Q</span> - Boost nexus</div>
-            <div><span style={{color: '#4ecdc4'}}>F</span> - Attack nearest</div>
-            <div><span style={{color: '#4ecdc4'}}>Click</span> - Attack/Move</div>
+          <div style={{ 
+            fontWeight: 'bold', 
+            marginBottom: '8px', 
+            fontSize: '12px',
+            color: '#3498db'
+          }}>
+            Controls
           </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 15px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <kbd style={{ 
+                background: 'rgba(255,255,255,0.2)', 
+                padding: '2px 6px', 
+                borderRadius: '4px',
+                fontFamily: 'monospace'
+              }}>WASD</kbd>
+              <span>Move</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <kbd style={{ 
+                background: 'rgba(255,255,255,0.2)', 
+                padding: '2px 6px', 
+                borderRadius: '4px',
+                fontFamily: 'monospace'
+              }}>E</kbd>
+              <span>Harvest</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <kbd style={{ 
+                background: 'rgba(255,255,255,0.2)', 
+                padding: '2px 6px', 
+                borderRadius: '4px',
+                fontFamily: 'monospace'
+              }}>Space</kbd>
+              <span>Beacon</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <kbd style={{ 
+                background: 'rgba(255,255,255,0.2)', 
+                padding: '2px 6px', 
+                borderRadius: '4px',
+                fontFamily: 'monospace'
+              }}>Q</kbd>
+              <span>Boost</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <kbd style={{ 
+                background: 'rgba(255,255,255,0.2)', 
+                padding: '2px 6px', 
+                borderRadius: '4px',
+                fontFamily: 'monospace'
+              }}>Click</kbd>
+              <span>Attack</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <kbd style={{ 
+                background: abilityCooldown > 0 ? 'rgba(255,0,0,0.3)' : 'rgba(255,255,255,0.2)', 
+                padding: '2px 6px', 
+                borderRadius: '4px',
+                fontFamily: 'monospace'
+              }}>R</kbd>
+              <span>{ability.icon} Ability</span>
+            </div>
+          </div>
+          {abilityCooldown > 0 && (
+            <div style={{ 
+              marginTop: '10px', 
+              padding: '6px',
+              background: 'rgba(231, 76, 60, 0.2)',
+              borderRadius: '4px',
+              textAlign: 'center',
+              fontSize: '10px',
+              fontWeight: 'bold'
+            }}>
+              ⏱️ {Math.ceil(abilityCooldown / 1000)}s cooldown
+=======
+        {/* Controls Help */}
+        <div className="hud-panel controls-hint">
+          <div className="controls-grid">
+            <div><kbd>WASD</kbd> MOVE</div>
+            <div><kbd>E</kbd> HARVEST</div>
+            <div><kbd>SPC</kbd> BEACON</div>
+            <div><kbd>Q</kbd> BOOST</div>
+            <div><kbd>L-CLK</kbd> FIRE</div>
+            <div><kbd>R</kbd> {ability.icon} ABILITY</div>
+          </div>
+          {abilityCooldown > 0 && (
+            <div className="ability-recharge">
+              ABILITY RECHARGING: {Math.ceil(abilityCooldown / 1000)}s
+>>>>>>> main
+            </div>
+          )}
         </div>
       </div>
 
@@ -302,37 +456,92 @@ const Game = () => {
       {gameOverData && (
         <div className="game-over-modal">
           <div className="modal-content">
-            <h2>🎮 Game Over!</h2>
-            
+            <h2 className="lobby-title mission-complete-title">MISSION COMPLETE</h2>
+            <p className="text-center text-dim mb-4">
+              DURATION: {formatDuration(gameOverData.matchDuration)}
+            </p>
+
             {gameOverData.winner ? (
-              <div>
-                <h3 className="winner">
-                  🏆 {gameOverData.winner.name} Wins!
+              <div className="winner-section">
+                <div className="winner-avatar" style={{
+                  backgroundColor: gameOverData.winner.color,
+                  boxShadow: `0 0 30px ${gameOverData.winner.color}`
+                }}>
+                  🏆
+                </div>
+                <h3 className={`winner-name status-text-bold ${gameOverData.winner.id === currentPlayer.id ? 'text-highlight' : ''}`} style={{ color: gameOverData.winner.id !== currentPlayer.id ? 'white' : undefined }}>
+                  {gameOverData.winner.name} WINS
                 </h3>
-                <p>Victory by {gameOverData.reason}</p>
+                {gameOverData.winner.id === currentPlayer.id && (
+                  <p className="text-success victory-text">VICTORY ACHIEVED</p>
+                )}
               </div>
             ) : (
-              <h3>Draw!</h3>
+              <h3 className="stalemate-title">STALEMATE</h3>
             )}
 
-            <div className="score-list">
-              <h4>Final Scores</h4>
-              {gameOverData.finalScores
-                .sort((a, b) => b.influence - a.influence)
-                .map((score, index) => (
-                <div key={score.id} className="score-item">
-                  <span>
-                    {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`}
-                    {' '}{score.name}
-                  </span>
-                  <span>🎯 {score.influence}</span>
-                </div>
-              ))}
+            <div className="mb-4">
+              <div className="flex-gap text-small text-dim scoreboard-header">
+                <span className="score-item-rank">#</span>
+                <span className="score-item-name">AGENT</span>
+                <span className="score-item-value">SCORE</span>
+                <span className="score-item-kd">K/D</span>
+              </div>
+              <div className="game-list scoreboard-list">
+                {gameOverData.finalScores.map((score, index) => (
+                  <div key={score.id} className={`room-list-item ${score.id === currentPlayer.id ? 'score-item-active' : ''}`}>
+                    <span className="score-item-rank">
+                      {index + 1}
+                    </span>
+                    <span className={`score-item-name ${score.id === currentPlayer.id ? 'text-highlight' : ''}`}>
+                      {score.name}
+                    </span>
+                    <span className="score-item-value">{Math.floor(score.score)}</span>
+                    <span className="score-item-kd">
+                      {score.kills}/{score.deaths}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
 
-            <button className="btn" onClick={handleReturnToLobby}>
-              🏠 Return to Lobby
+            {/* Detailed Stats Toggle */}
+            <button
+              onClick={() => setShowStats(!showStats)}
+              className="stats-toggle-btn"
+            >
+              {showStats ? '▼ HIDE BATTLE DATA' : '▶ ACCESS BATTLE DATA'}
             </button>
+
+            {showStats && (
+              <div className="detailed-stats-panel">
+                {gameOverData.finalScores.slice(0, 5).map(score => (
+                  <div key={score.id} className="stat-row">
+                    <div className={`stat-row-name ${score.id === currentPlayer.id ? 'text-highlight' : ''}`}>{score.name}</div>
+                    <div className="stat-row-details">
+                      <div>🎯 INF: {Math.floor(score.influence)}</div>
+                      <div>⚔️ DMG: {Math.floor(score.damageDealt)}</div>
+                      <div>🏰 CAP: {score.nexusesCaptured}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex-gap">
+              <button
+                className="btn btn-primary action-buttons"
+                onClick={handlePlayAgain}
+              >
+                REDEPLOY
+              </button>
+              <button
+                className="btn btn-secondary action-buttons"
+                onClick={handleReturnToLobby}
+              >
+                RTB (LOBBY)
+              </button>
+            </div>
           </div>
         </div>
       )}

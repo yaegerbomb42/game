@@ -85,43 +85,115 @@ nexus-wars/
 
 ## 🚀 Deployment
 
+### Quick Deploy Guide
+
+Since this game uses WebSockets for real-time multiplayer, you'll need to deploy the frontend and backend separately:
+
+- **Frontend (Client)**: Deploy to Vercel, Netlify, or any static hosting
+- **Backend (Server)**: Deploy to Railway, Render, Fly.io, or any WebSocket-compatible hosting
+
+### Frontend Deployment (Vercel)
+
+1. Push your code to GitHub
+2. Import your repository to [Vercel](https://vercel.com)
+3. Set the root directory to `client`
+4. Add environment variable: `VITE_SERVER_URL=https://your-server-url.com`
+5. Deploy!
+
+### Backend Deployment Options
+
+#### Railway (Recommended)
+```bash
+cd server
+npm install -g @railway/cli
+railway login
+railway init
+railway up
+```
+Configuration file included: `server/railway.json`
+
+#### Render
+1. Create a new Web Service on [Render](https://render.com)
+2. Connect your GitHub repo
+3. Set root directory to `server`
+4. Render will auto-detect the `render.yaml` configuration
+
+#### Fly.io
+```bash
+cd server
+flyctl launch
+flyctl deploy
+```
+Configuration file included: `server/fly.toml`
+
 ### Environment Variables
 
-Create `.env` files for production:
-
-**Client (.env)**
-```
-VITE_SERVER_URL=https://your-server-domain.com
-```
+**Backend (Railway):**
+```bash
+# Install Railway CLI
+npm i -g @railway/cli
 
 **Server (.env)**
 ```
 PORT=3001
 NODE_ENV=production
+ALLOWED_ORIGINS=https://your-frontend-domain.vercel.app
 ```
 
-### Build for Production
+**Frontend (Vercel):**
+```bash
+# Install Vercel CLI
+npm i -g vercel
+
+# Deploy
+cd client && vercel --prod
+```
+
+Set environment variable `VITE_SERVER_URL` to your Railway backend URL.
+
+#### Option 2: All-in-One Vercel
+Suitable for testing, but WebSocket performance may be limited.
 
 ```bash
-# Build both client and server
-npm run build
-
-# Start production server
-npm start
+# Deploy from root
+vercel --prod
 ```
 
-### Docker Deployment
-
+#### Option 3: Docker Deployment
 ```bash
 # Build and run with Docker Compose
 docker-compose up --build
 ```
 
-### Recommended Hosting
+### Hosting Architecture
 
+<<<<<<< HEAD
+```
+┌─────────────────┐     WebSocket     ┌─────────────────┐
+│  Vercel/Netlify │ ←───────────────→ │ Railway/Render  │
+│   (Frontend)    │                   │    (Backend)    │
+│  Static Files   │      HTTP/WS      │  Game Server    │
+└─────────────────┘                   └─────────────────┘
+```
+=======
 - **Frontend**: Vercel, Netlify, or any static hosting
-- **Backend**: Railway, Render, Fly.io, or any Node.js hosting
+- **Backend**: Railway, Render, Fly.io, or any Node.js hosting (must support WebSockets)
 - **Database**: Redis (for session management in production)
+>>>>>>> main
+
+### Vercel Multiplayer Notes
+
+This game uses **Socket.IO (WebSockets)** for real-time multiplayer. The recommended setup is:
+
+- Deploy the **client** to Vercel.
+- Deploy the **server** to a WebSocket-capable host (Railway/Render/Fly/etc).
+- Set the Vercel project env var `VITE_SERVER_URL` to your server URL (example: `https://your-server.example.com`).
+
+On the server, you can optionally restrict which client origins are allowed by setting:
+
+```
+CLIENT_ORIGINS=https://your-vercel-app.vercel.app,https://your-custom-domain.com
+```
 
 ## 🎮 Game Mechanics
 

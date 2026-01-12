@@ -6,6 +6,8 @@ interface Player {
   name: string
   x: number
   y: number
+  targetX: number
+  targetY: number
   energy: number
   influence: number
   color: string
@@ -19,6 +21,12 @@ interface Player {
   score: number
   activePowerUps: any[]
   speed: number
+  comboCount: number
+  killStreak: number
+  invincibleUntil: number
+  abilityType: string
+  abilityCooldown: number
+  lastAbilityUse: number
 }
 
 interface Nexus {
@@ -28,6 +36,8 @@ interface Nexus {
   energy: number
   controlledBy: string | null
   chargeLevel: number
+  contestProgress: Record<string, number>
+  isContested: boolean
 }
 
 interface PowerUp {
@@ -51,34 +61,24 @@ interface GameState {
     score: number
     kills: number
     deaths: number
+    killStreak: number
+    damageDealt: number
   }>
 }
 
 export class GameScene extends Phaser.Scene {
-  // Constants
-  private static readonly BOUNDARY_PADDING = 20
-  private static readonly MAP_WIDTH = 780
-  private static readonly MAP_HEIGHT = 580
-  private static readonly INTERPOLATION_SPEED = 0.015
-  private static readonly POWERUP_COLLECTION_RADIUS = 35
-  private static readonly COLOR_CONTESTED = '#ff6b6b'
-  private static readonly COLOR_SUCCESS = '#ffd700'
-  
   private socket!: Socket
   private currentPlayer!: Player
   private gameState!: GameState
   
   // Game objects
-  private playerSprites = new Map<string, Phaser.GameObjects.Arc>()
-  private playerTargetPositions = new Map<string, {x: number, y: number}>()
-  private playerHealthBars = new Map<string, Phaser.GameObjects.Container>()
+  private playerSprites = new Map<string, Phaser.GameObjects.Container>()
   private nexusSprites = new Map<string, Phaser.GameObjects.Container>()
   private powerUpSprites = new Map<string, Phaser.GameObjects.Container>()
   private influenceGraphics!: Phaser.GameObjects.Graphics
-  private particleEmitter!: Phaser.GameObjects.Particles.ParticleEmitter
   private leaderboardText!: Phaser.GameObjects.Text
-  private statsText!: Phaser.GameObjects.Text
-  private phaseText!: Phaser.GameObjects.Text
+  private comboText!: Phaser.GameObjects.Text
+  private abilityIndicator!: Phaser.GameObjects.Container
   
   // Input
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys
@@ -87,70 +87,95 @@ export class GameScene extends Phaser.Scene {
   // Movement
   private targetX = 0
   private targetY = 0
-  private isMoving = false
-  private lastMoveTime = 0
-  private moveThrottle = 50 // Send moves every 50ms max
+  private isMovingToTarget = false
+
+  // Visual effects queue
+  private effectsQueue: Array<() => void> = []
+  
+  // Screen shake
+  private shakeIntensity = 0
+  private shakeDecay = 0.9
 
   constructor() {
     super({ key: 'GameScene' })
   }
 
   preload() {
-    // Create simple colored graphics programmatically instead of loading images
-    this.load.image('pixel', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==')
+    // Create particle texture programmatically
+    const graphics = this.add.graphics()
+    graphics.fillStyle(0xffffff)
+    graphics.fillCircle(4, 4, 4)
+    graphics.generateTexture('particle', 8, 8)
+    graphics.destroy()
   }
 
   create() {
     // Create graphics for influence visualization
     this.influenceGraphics = this.add.graphics()
     
-    // Create particle emitter for effects
-    this.particleEmitter = this.add.particles(0, 0, 'pixel', {
-      scale: { start: 4, end: 0 },
-      speed: { min: 50, max: 150 },
-      lifespan: 400,
-      quantity: 1,
-      emitting: false
-    })
-
     // Setup input
     this.cursors = this.input.keyboard!.createCursorKeys()
-    this.wasdKeys = this.input.keyboard!.addKeys('W,S,A,D') as Record<string, Phaser.Input.Keyboard.Key>
+    this.wasdKeys = this.input.keyboard!.addKeys('W,S,A,D,E,Q,F,R,SPACE') as Record<string, Phaser.Input.Keyboard.Key>
 
     // Mouse input for movement and attacks
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       this.handleMouseClick(pointer.x, pointer.y)
     })
 
-    // Keyboard input
+    // Keyboard actions
     this.input.keyboard!.on('keydown-E', () => this.handleHarvest())
     this.input.keyboard!.on('keydown-Q', () => this.handleBoostNexus())
     this.input.keyboard!.on('keydown-SPACE', () => this.handleDeployBeacon())
     this.input.keyboard!.on('keydown-F', () => this.handleAttackNearestPlayer())
+    this.input.keyboard!.on('keydown-R', () => this.handleUseAbility())
 
-    // Create leaderboard UI
+    // Create UI elements
+    this.createUI()
+  }
+
+  private createUI() {
+    // Background pattern for visual appeal
+    const bgPattern = this.add.graphics()
+    bgPattern.fillStyle(0x000000, 0.3)
+    for (let x = 0; x < 800; x += 40) {
+      for (let y = 0; y < 600; y += 40) {
+        if ((x + y) % 80 === 0) {
+          bgPattern.fillRect(x, y, 20, 20)
+        }
+      }
+    }
+    bgPattern.setScrollFactor(0).setDepth(0)
+    
+    // Leaderboard with better styling
     this.leaderboardText = this.add.text(10, 10, '', {
-      fontSize: '14px',
+      fontSize: '13px',
       color: '#ffffff',
-      backgroundColor: 'rgba(0,0,0,0.8)',
-      padding: { x: 10, y: 10 }
+      backgroundColor: 'rgba(0, 0, 0, 0.75)',
+      padding: { x: 10, y: 8 },
+      fontFamily: 'Arial',
+      stroke: '#000000',
+      strokeThickness: 1
     }).setScrollFactor(0).setDepth(1000)
-    
-    // Create stats display
-    this.statsText = this.add.text(10, 550, '', {
-      fontSize: '12px',
+
+    // Combo counter
+    this.comboText = this.add.text(400, 50, '', {
+      fontSize: '24px',
+      color: '#ffff00',
+      fontStyle: 'bold',
+      stroke: '#000000',
+      strokeThickness: 4
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(1001).setAlpha(0)
+
+    // Ability indicator
+    this.abilityIndicator = this.add.container(700, 550)
+    const abilityBg = this.add.circle(0, 0, 30, 0x333333, 0.8)
+    const abilityText = this.add.text(0, 0, 'R', {
+      fontSize: '20px',
       color: '#ffffff',
-      backgroundColor: 'rgba(0,0,0,0.8)',
-      padding: { x: 8, y: 5 }
-    }).setScrollFactor(0).setDepth(1000)
-    
-    // Phase indicator
-    this.phaseText = this.add.text(400, 10, '', {
-      fontSize: '16px',
-      color: GameScene.COLOR_SUCCESS,
-      backgroundColor: 'rgba(0,0,0,0.8)',
-      padding: { x: 15, y: 8 }
-    }).setScrollFactor(0).setDepth(1000).setOrigin(0.5, 0)
+      fontStyle: 'bold'
+    }).setOrigin(0.5)
+    this.abilityIndicator.add([abilityBg, abilityText])
+    this.abilityIndicator.setScrollFactor(0).setDepth(1000)
   }
 
   initializeGame(socket: Socket, player: Player, gameState: GameState) {
@@ -172,110 +197,80 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(_time: number, delta: number) {
-    this.handleMovement()
-    this.updatePlayerPosition()
-    this.interpolateOtherPlayers(delta)
-    this.checkPowerUpProximity()
-    this.updateStatsDisplay()
+    if (!this.currentPlayer || !this.gameState) return
+    
+    // Throttle expensive operations
+    const now = Date.now()
+    if (!this.lastUpdate) this.lastUpdate = now
+    const timeSinceLastUpdate = now - this.lastUpdate
+    
+    // Update movement every frame for responsiveness
+    this.handleMovement(delta)
+    this.updatePlayerPosition(delta)
+    this.updateAbilityIndicator()
+    this.updateScreenShake()
+    
+    // Process visual effects (limit to prevent lag)
+    let effectsProcessed = 0
+    while (this.effectsQueue.length > 0 && effectsProcessed < 3) {
+      const effect = this.effectsQueue.shift()
+      if (effect) {
+        effect()
+        effectsProcessed++
+      }
+    }
+    
+    // Update expensive visuals less frequently
+    if (timeSinceLastUpdate > 50) { // Every ~50ms instead of every frame
+      this.renderInfluenceMap()
+      this.lastUpdate = now
+    }
+  }
+  
+  private lastUpdate: number = 0
+
+  private updateScreenShake() {
+    if (this.shakeIntensity > 0.1) {
+      const offsetX = (Math.random() - 0.5) * this.shakeIntensity
+      const offsetY = (Math.random() - 0.5) * this.shakeIntensity
+      this.cameras.main.setScroll(offsetX, offsetY)
+      this.shakeIntensity *= this.shakeDecay
+    } else {
+      this.shakeIntensity = 0
+      this.cameras.main.setScroll(0, 0)
+    }
   }
 
-  private handleMovement() {
-    if (!this.currentPlayer?.isAlive) return
-    
-    const speed = this.currentPlayer.speed || 150
+  private addScreenShake(intensity: number) {
+    this.shakeIntensity = Math.max(this.shakeIntensity, intensity)
+  }
+
+  private handleMovement(delta: number) {
     let velocityX = 0
     let velocityY = 0
 
-    // WASD movement
-    if (this.wasdKeys.A.isDown || this.cursors.left!.isDown) {
-      velocityX = -speed
-    } else if (this.wasdKeys.D.isDown || this.cursors.right!.isDown) {
-      velocityX = speed
-    }
+    if (this.wasdKeys.A?.isDown || this.cursors.left?.isDown) velocityX = -1
+    else if (this.wasdKeys.D?.isDown || this.cursors.right?.isDown) velocityX = 1
 
-    if (this.wasdKeys.W.isDown || this.cursors.up!.isDown) {
-      velocityY = -speed
-    } else if (this.wasdKeys.S.isDown || this.cursors.down!.isDown) {
-      velocityY = speed
-    }
+    if (this.wasdKeys.W?.isDown || this.cursors.up?.isDown) velocityY = -1
+    else if (this.wasdKeys.S?.isDown || this.cursors.down?.isDown) velocityY = 1
 
-    // Apply movement with throttling
     if (velocityX !== 0 || velocityY !== 0) {
-      const now = Date.now()
-      if (now - this.lastMoveTime < this.moveThrottle) {
-        // Ensure any existing movement (e.g. mouse-driven) is cancelled even when throttled
-        this.isMoving = false
-        return
-      }
-      this.lastMoveTime = now
+      this.isMovingToTarget = false
+      const speed = this.currentPlayer.speed * (delta / 1000)
       
       // Normalize diagonal movement
       if (velocityX !== 0 && velocityY !== 0) {
-        const factor = 0.707 // 1/sqrt(2)
+        const factor = 0.707
         velocityX *= factor
         velocityY *= factor
       }
-      
-      const dt = 1/60
-      const newX = Phaser.Math.Clamp(this.currentPlayer.x + velocityX * dt, GameScene.BOUNDARY_PADDING, GameScene.MAP_WIDTH)
-      const newY = Phaser.Math.Clamp(this.currentPlayer.y + velocityY * dt, GameScene.BOUNDARY_PADDING, GameScene.MAP_HEIGHT)
-      
-      // Optimistic update
-      this.currentPlayer.x = newX
-      this.currentPlayer.y = newY
+
+      const newX = Phaser.Math.Clamp(this.currentPlayer.x + velocityX * speed, 20, 780)
+      const newY = Phaser.Math.Clamp(this.currentPlayer.y + velocityY * speed, 20, 580)
       
       this.sendPlayerAction('move', { x: newX, y: newY })
-      this.isMoving = false // Cancel mouse movement when using keys
     }
-  }
-  
-  private interpolateOtherPlayers(delta: number) {
-    const lerpFactor = Math.min(1, delta * GameScene.INTERPOLATION_SPEED) // Smooth interpolation
-    
-    this.playerSprites.forEach((sprite, playerId) => {
-      if (playerId === this.currentPlayer?.id) return
-      
-      const targetPos = this.playerTargetPositions.get(playerId)
-      if (!targetPos) return
-      
-      // Smooth interpolation to target position
-      const newX = Phaser.Math.Linear(sprite.x, targetPos.x, lerpFactor)
-      const newY = Phaser.Math.Linear(sprite.y, targetPos.y, lerpFactor)
-      
-      sprite.setPosition(newX, newY)
-      
-      // Update name text
-      const nameText = sprite.getData('nameText')
-      if (nameText) {
-        nameText.setPosition(newX, newY - 25)
-      }
-    })
-  }
-  
-  private checkPowerUpProximity() {
-    if (!this.gameState?.powerUps || !this.currentPlayer?.isAlive) return
-    
-    for (const powerUp of this.gameState.powerUps) {
-      if (powerUp.collected) continue
-      
-      const distance = Phaser.Math.Distance.Between(
-        this.currentPlayer.x, this.currentPlayer.y,
-        powerUp.x, powerUp.y
-      )
-      
-      if (distance < GameScene.POWERUP_COLLECTION_RADIUS) {
-        this.sendPlayerAction('collect-powerup', { powerUpId: powerUp.id })
-        break // Only collect one per frame
-      }
-    }
-  }
-  
-  private updateStatsDisplay() {
-    if (!this.currentPlayer) return
-    
-    this.statsText.setText(
-      `K: ${this.currentPlayer.kills} | D: ${this.currentPlayer.deaths} | Score: ${this.currentPlayer.score}`
-    )
   }
 
   private handleMouseClick(x: number, y: number) {
@@ -283,14 +278,16 @@ export class GameScene extends Phaser.Scene {
     const clickedPlayer = this.getPlayerAtPosition(x, y)
     if (clickedPlayer && clickedPlayer.id !== this.currentPlayer.id) {
       this.sendPlayerAction('attack', { targetId: clickedPlayer.id })
-      this.createAttackEffect(this.currentPlayer.x, this.currentPlayer.y, x, y)
       return
     }
 
     // Otherwise, move to position
     this.targetX = x
     this.targetY = y
-    this.isMoving = true
+    this.isMovingToTarget = true
+    
+    // Visual feedback for target
+    this.createMoveTargetEffect(x, y)
   }
 
   private handleHarvest() {
@@ -310,43 +307,99 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleDeployBeacon() {
-    this.sendPlayerAction('deploy-beacon', {})
-    this.createBeaconEffect(this.currentPlayer.x, this.currentPlayer.y)
+    if (this.currentPlayer.energy >= 25) {
+      this.sendPlayerAction('deploy-beacon', {})
+      this.createBeaconEffect(this.currentPlayer.x, this.currentPlayer.y)
+    }
   }
 
-  private updatePlayerPosition() {
-    if (!this.isMoving || !this.currentPlayer?.isAlive) return
+  private handleAttackNearestPlayer() {
+    const players = Object.values(this.gameState.players)
+    let nearestPlayerId: string | null = null
+    let nearestDistance = Infinity
     
-    const distance = Phaser.Math.Distance.Between(
-      this.currentPlayer.x, this.currentPlayer.y,
-      this.targetX, this.targetY
-    )
-
-    if (distance < 5) {
-      this.isMoving = false
-      return
+    for (const player of players) {
+      if (player.id === this.currentPlayer.id || !player.isAlive) continue
+      
+      const distance = Phaser.Math.Distance.Between(
+        this.currentPlayer.x, this.currentPlayer.y,
+        player.x, player.y
+      )
+      
+      if (distance < nearestDistance && distance <= this.currentPlayer.attackRange) {
+        nearestDistance = distance
+        nearestPlayerId = player.id
+      }
     }
-
-    const now = Date.now()
-    if (now - this.lastMoveTime < this.moveThrottle) return
-    this.lastMoveTime = now
-
-    const angle = Phaser.Math.Angle.Between(
-      this.currentPlayer.x, this.currentPlayer.y,
-      this.targetX, this.targetY
-    )
-
-    const speed = this.currentPlayer.speed || 150
-    const dt = 1/60
-    const moveDistance = Math.min(speed * dt, distance)
-    const newX = Phaser.Math.Clamp(this.currentPlayer.x + Math.cos(angle) * moveDistance, GameScene.BOUNDARY_PADDING, GameScene.MAP_WIDTH)
-    const newY = Phaser.Math.Clamp(this.currentPlayer.y + Math.sin(angle) * moveDistance, GameScene.BOUNDARY_PADDING, GameScene.MAP_HEIGHT)
-
-    // Optimistic update
-    this.currentPlayer.x = newX
-    this.currentPlayer.y = newY
     
-    this.sendPlayerAction('move', { x: newX, y: newY })
+    if (nearestPlayerId) {
+      this.sendPlayerAction('attack', { targetId: nearestPlayerId })
+    }
+  }
+
+  private handleUseAbility() {
+    const now = Date.now()
+    const cooldownRemaining = this.currentPlayer.lastAbilityUse + this.currentPlayer.abilityCooldown - now
+    
+    if (cooldownRemaining <= 0) {
+      this.sendPlayerAction('use-ability', { 
+        abilityType: this.currentPlayer.abilityType,
+        x: this.targetX || this.currentPlayer.x,
+        y: this.targetY || this.currentPlayer.y
+      })
+    }
+  }
+
+  private updateAbilityIndicator() {
+    if (!this.currentPlayer) return
+    
+    const now = Date.now()
+    const cooldownRemaining = Math.max(0, this.currentPlayer.lastAbilityUse + this.currentPlayer.abilityCooldown - now)
+    const bg = this.abilityIndicator.list[0] as Phaser.GameObjects.Arc
+    const text = this.abilityIndicator.list[1] as Phaser.GameObjects.Text
+    
+    if (cooldownRemaining > 0) {
+      bg.fillColor = 0x666666
+      text.setText(Math.ceil(cooldownRemaining / 1000).toString())
+    } else {
+      bg.fillColor = this.getAbilityColor(this.currentPlayer.abilityType)
+      text.setText('R')
+    }
+  }
+
+  private getAbilityColor(abilityType: string): number {
+    switch (abilityType) {
+      case 'dash': return 0x00ffff
+      case 'heal': return 0x00ff00
+      case 'shield': return 0x0000ff
+      case 'scan': return 0xff00ff
+      default: return 0xffffff
+    }
+  }
+
+  private updatePlayerPosition(delta: number) {
+    if (this.isMovingToTarget) {
+      const distance = Phaser.Math.Distance.Between(
+        this.currentPlayer.x, this.currentPlayer.y,
+        this.targetX, this.targetY
+      )
+
+      if (distance < 5) {
+        this.isMovingToTarget = false
+        return
+      }
+
+      const angle = Phaser.Math.Angle.Between(
+        this.currentPlayer.x, this.currentPlayer.y,
+        this.targetX, this.targetY
+      )
+
+      const speed = this.currentPlayer.speed * (delta / 1000)
+      const newX = this.currentPlayer.x + Math.cos(angle) * speed
+      const newY = this.currentPlayer.y + Math.sin(angle) * speed
+
+      this.sendPlayerAction('move', { x: newX, y: newY })
+    }
   }
 
   private sendPlayerAction(type: string, data: any) {
@@ -360,7 +413,6 @@ export class GameScene extends Phaser.Scene {
   private updateGameState(newGameState: GameState) {
     this.gameState = newGameState
     
-    // Update current player data
     const updatedPlayer = Object.values(newGameState.players)
       .find(p => p.id === this.currentPlayer.id)
     if (updatedPlayer) {
@@ -371,24 +423,49 @@ export class GameScene extends Phaser.Scene {
   }
 
   private renderGameState() {
-    this.renderInfluenceMap()
+    // Only render expensive operations when needed
     this.renderNexuses()
     this.renderPlayers()
-    this.renderHealthBars()
     this.renderPowerUps()
     this.renderLeaderboard()
+    // Influence map is rendered separately in update loop for performance
   }
 
   private renderInfluenceMap() {
     this.influenceGraphics.clear()
     
-    // Create a simple influence visualization
     const players = Object.values(this.gameState.players)
     players.forEach(player => {
-      if (player.influence > 0) {
-        const radius = Math.min(player.influence * 2, 100)
-        this.influenceGraphics.fillStyle(Phaser.Display.Color.HexStringToColor(player.color).color, 0.1)
+      if (player.influence > 0 && player.isAlive) {
+        const radius = Math.min(player.influence * 1.5, 80)
+        const color = Phaser.Display.Color.HexStringToColor(player.color).color
+        // Enhanced visual with pulsing effect
+        this.influenceGraphics.fillStyle(color, 0.12)
         this.influenceGraphics.fillCircle(player.x, player.y, radius)
+        
+        // Pulsing inner circle
+        const pulse = Math.sin(Date.now() / 1000) * 0.02 + 0.98
+        this.influenceGraphics.fillStyle(color, 0.06 * pulse)
+        this.influenceGraphics.fillCircle(player.x, player.y, radius * 0.7)
+      }
+    })
+
+    // Draw nexus influence zones with better visuals
+    this.gameState.nexuses.forEach(nexus => {
+      if (nexus.controlledBy) {
+        const player = this.gameState.players[nexus.controlledBy]
+        if (player) {
+          const color = Phaser.Display.Color.HexStringToColor(player.color).color
+          // Multiple rings for better visibility
+          this.influenceGraphics.lineStyle(3, color, 0.4)
+          this.influenceGraphics.strokeCircle(nexus.x, nexus.y, 70)
+          this.influenceGraphics.lineStyle(2, color, 0.2)
+          this.influenceGraphics.strokeCircle(nexus.x, nexus.y, 90)
+        }
+      } else if (nexus.isContested) {
+        // Show contested state
+        this.influenceGraphics.lineStyle(2, 0xff4444, 0.5)
+        this.influenceGraphics.strokeCircle(nexus.x, nexus.y, 70)
       }
     })
   }
@@ -398,385 +475,259 @@ export class GameScene extends Phaser.Scene {
       let container = this.nexusSprites.get(nexus.id)
       
       if (!container) {
-        container = this.add.container(nexus.x, nexus.y)
-        
-        // Nexus base
-        const base = this.add.circle(0, 0, 25, 0x3498db)
-        base.setStrokeStyle(3, 0x2980b9)
-        
-        // Energy indicator
-        const energyBar = this.add.rectangle(-20, -35, 40, 6, 0x2c3e50)
-        const energyFill = this.add.rectangle(-20, -35, 0, 6, 0x27ae60)
-        
-        // Charge level indicators
-        const chargeDots: Phaser.GameObjects.Arc[] = []
-        for (let i = 0; i < 3; i++) {
-          const dot = this.add.circle(-10 + i * 10, 35, 3, 0x95a5a6)
-          chargeDots.push(dot)
-        }
-        
-        container.add([base, energyBar, energyFill, ...chargeDots])
-        container.setData('energyFill', energyFill)
-        container.setData('chargeDots', chargeDots)
-        
+        container = this.createNexusSprite(nexus)
         this.nexusSprites.set(nexus.id, container)
       }
 
-      // Update energy bar
-      const energyFill = container.getData('energyFill')
-      energyFill.width = (nexus.energy / 100) * 40
-      
-      // Update charge level
-      const chargeDots = container.getData('chargeDots')
-      chargeDots.forEach((dot: Phaser.GameObjects.Arc, index: number) => {
-        dot.fillColor = index < nexus.chargeLevel ? 0xf39c12 : 0x95a5a6
-      })
-
-      // Update control color
-      const base = container.list[0] as Phaser.GameObjects.Arc
-      if (nexus.controlledBy) {
-        const controllingPlayer = Object.values(this.gameState.players)
-          .find(p => p.id === nexus.controlledBy)
-        if (controllingPlayer) {
-          base.fillColor = Phaser.Display.Color.HexStringToColor(controllingPlayer.color).color
-        }
-      } else {
-        base.fillColor = 0x3498db
-      }
+      this.updateNexusSprite(container, nexus)
     })
+  }
+
+  private createNexusSprite(nexus: Nexus): Phaser.GameObjects.Container {
+    const container = this.add.container(nexus.x, nexus.y)
+    
+    // Outer glow
+    const glow = this.add.circle(0, 0, 35, 0x3498db, 0.3)
+    
+    // Nexus base
+    const base = this.add.circle(0, 0, 25, 0x3498db)
+    base.setStrokeStyle(3, 0x2980b9)
+    
+    // Inner core
+    const core = this.add.circle(0, 0, 10, 0xffffff, 0.8)
+    
+    // Energy bar background
+    const energyBg = this.add.rectangle(0, -40, 50, 8, 0x2c3e50)
+    energyBg.setStrokeStyle(1, 0x34495e)
+    
+    // Energy bar fill
+    const energyFill = this.add.rectangle(-25, -40, 0, 6, 0x27ae60)
+    energyFill.setOrigin(0, 0.5)
+    
+    // Contest bar (shows capture progress)
+    const contestBg = this.add.rectangle(0, -50, 50, 4, 0x1a1a2e)
+    const contestFill = this.add.rectangle(-25, -50, 0, 4, 0xf39c12)
+    contestFill.setOrigin(0, 0.5)
+    
+    // Charge level indicators
+    const chargeDots: Phaser.GameObjects.Arc[] = []
+    for (let i = 0; i < 5; i++) {
+      const dot = this.add.circle(-20 + i * 10, 40, 4, 0x95a5a6)
+      chargeDots.push(dot)
+    }
+    
+    // Contested indicator
+    const contestedText = this.add.text(0, -60, '⚔️', {
+      fontSize: '16px'
+    }).setOrigin(0.5).setVisible(false)
+    
+    container.add([glow, base, core, energyBg, energyFill, contestBg, contestFill, ...chargeDots, contestedText])
+    container.setData('glow', glow)
+    container.setData('base', base)
+    container.setData('core', core)
+    container.setData('energyFill', energyFill)
+    container.setData('contestFill', contestFill)
+    container.setData('chargeDots', chargeDots)
+    container.setData('contestedText', contestedText)
+    
+    return container
+  }
+
+  private updateNexusSprite(container: Phaser.GameObjects.Container, nexus: Nexus) {
+    const base = container.getData('base') as Phaser.GameObjects.Arc
+    const glow = container.getData('glow') as Phaser.GameObjects.Arc
+    const energyFill = container.getData('energyFill') as Phaser.GameObjects.Rectangle
+    const contestFill = container.getData('contestFill') as Phaser.GameObjects.Rectangle
+    const chargeDots = container.getData('chargeDots') as Phaser.GameObjects.Arc[]
+    const contestedText = container.getData('contestedText') as Phaser.GameObjects.Text
+    
+    // Update energy bar
+    energyFill.width = (nexus.energy / 100) * 48
+    
+    // Update charge level
+    chargeDots.forEach((dot, index) => {
+      dot.fillColor = index < nexus.chargeLevel ? 0xf39c12 : 0x95a5a6
+    })
+
+    // Update control color
+    if (nexus.controlledBy) {
+      const controllingPlayer = this.gameState.players[nexus.controlledBy]
+      if (controllingPlayer) {
+        const color = Phaser.Display.Color.HexStringToColor(controllingPlayer.color).color
+        base.fillColor = color
+        glow.fillColor = color
+      }
+    } else {
+      base.fillColor = 0x3498db
+      glow.fillColor = 0x3498db
+    }
+
+    // Update contest progress for current player
+    const myProgress = nexus.contestProgress[this.currentPlayer?.id] || 0
+    contestFill.width = (myProgress / 100) * 48
+    
+    // Show contested indicator
+    contestedText.setVisible(nexus.isContested)
   }
 
   private renderPlayers() {
     const players = Object.values(this.gameState.players)
     
     players.forEach(player => {
-      // Store target position for interpolation
-      this.playerTargetPositions.set(player.id, { x: player.x, y: player.y })
+      let container = this.playerSprites.get(player.id)
       
-      let sprite = this.playerSprites.get(player.id)
-      
-      if (!sprite) {
-        // Create player as a circle
-        sprite = this.add.circle(player.x, player.y, 12, Phaser.Display.Color.HexStringToColor(player.color).color)
-        sprite.setStrokeStyle(3, 0xffffff)
-        sprite.setDepth(100)
-        
-        // Add player name text
-        const nameText = this.add.text(player.x, player.y - 25, player.name, {
-          fontSize: '12px',
-          color: '#ffffff',
-          stroke: '#000000',
-          strokeThickness: 2
-        }).setOrigin(0.5).setDepth(101)
-        
-        sprite.setData('nameText', nameText)
-        this.playerSprites.set(player.id, sprite)
+      if (!container) {
+        container = this.createPlayerSprite(player)
+        this.playerSprites.set(player.id, container)
       }
 
-      // For current player, update position immediately
-      if (player.id === this.currentPlayer?.id) {
-        sprite.setPosition(player.x, player.y)
-        const nameText = sprite.getData('nameText') as Phaser.GameObjects.Text
-        if (nameText) nameText.setPosition(player.x, player.y - 25)
-        sprite.setScale(1.3)
-        sprite.setAlpha(1)
-        sprite.setStrokeStyle(4, 0xffd700) // Gold outline for self
-      } else {
-        // Other players will be interpolated in update loop
-        sprite.setScale(1)
-        sprite.setAlpha(player.isAlive ? 0.9 : 0.3)
-        sprite.setStrokeStyle(2, 0xffffff)
-      }
-      
-      // Update color in case of power-ups
-      const baseColor = Phaser.Display.Color.HexStringToColor(player.color).color
-      sprite.fillColor = baseColor
+      this.updatePlayerSprite(container, player)
     })
 
     // Remove sprites for disconnected players
-    this.playerSprites.forEach((sprite, playerId) => {
+    this.playerSprites.forEach((container, playerId) => {
       if (!players.find(p => p.id === playerId)) {
-        const nameText = sprite.getData('nameText')
-        if (nameText) nameText.destroy()
-        sprite.destroy()
-        this.playerSprites.delete(playerId)
-        this.playerTargetPositions.delete(playerId)
-        this.playerHealthBars.get(playerId)?.destroy()
-        this.playerHealthBars.delete(playerId)
-      }
-    })
-  }
-
-  private getNearbyNexus(): Nexus | null {
-    return this.gameState.nexuses.find(nexus => {
-      const distance = Phaser.Math.Distance.Between(
-        this.currentPlayer.x, this.currentPlayer.y,
-        nexus.x, nexus.y
-      )
-      return distance < 50
-    }) || null
-  }
-
-  private getPlayerAtPosition(x: number, y: number): Player | null {
-    return Object.values(this.gameState.players).find(player => {
-      const distance = Phaser.Math.Distance.Between(player.x, player.y, x, y)
-      return distance < 25
-    }) || null
-  }
-
-  private handleGameEvent(event: any) {
-    switch (event.type) {
-      case 'nexus-captured':
-        this.createCaptureEffect(event.data.nexusId)
-        this.showNotification(`${event.data.playerName} captured a nexus!`, event.data.contested ? GameScene.COLOR_CONTESTED : GameScene.COLOR_SUCCESS)
-        break
-      case 'energy-pulse':
-        this.createPulseEffect()
-        break
-      case 'player-attacked':
-        this.handlePlayerAttackedEvent(event.data)
-        break
-      case 'player-killed':
-        this.handlePlayerKilledEvent(event.data)
-        break
-      case 'powerup-spawned':
-        // Power-ups are handled in renderPowerUps
-        break
-      case 'powerup-collected':
-        this.handlePowerUpCollectedEvent(event.data)
-        break
-      case 'beacon-deployed':
-        this.createBeaconEffect(event.data.x, event.data.y)
-        break
-      case 'phase-changed':
-        this.showNotification(`Phase: ${event.data.newPhase.toUpperCase()}`, GameScene.COLOR_SUCCESS)
-        break
-    }
-  }
-  
-  private showNotification(text: string, color: string = '#ffffff') {
-    const notification = this.add.text(400, 80, text, {
-      fontSize: '18px',
-      color: color,
-      backgroundColor: 'rgba(0,0,0,0.8)',
-      padding: { x: 15, y: 8 }
-    }).setOrigin(0.5).setDepth(1000).setAlpha(0)
-    
-    this.tweens.add({
-      targets: notification,
-      alpha: 1,
-      y: 100,
-      duration: 300,
-      ease: 'Back.out',
-      onComplete: () => {
-        this.tweens.add({
-          targets: notification,
-          alpha: 0,
-          y: 120,
-          delay: 2000,
-          duration: 500,
-          onComplete: () => notification.destroy()
-        })
-      }
-    })
-  }
-
-  private handlePlayerAttackedEvent(data: any) {
-    const attacker = Object.values(this.gameState.players).find(p => p.id === data.attackerId)
-    const target = Object.values(this.gameState.players).find(p => p.id === data.targetId)
-    
-    if (attacker && target) {
-      this.createAttackEffect(attacker.x, attacker.y, target.x, target.y)
-      
-      // Create damage number
-      const damageText = this.add.text(target.x, target.y - 20, `-${data.damage}`, {
-        fontSize: '16px',
-        color: '#ff0000',
-        fontStyle: 'bold'
-      }).setOrigin(0.5)
-      
-      this.tweens.add({
-        targets: damageText,
-        y: target.y - 40,
-        alpha: 0,
-        duration: 1000,
-        onComplete: () => damageText.destroy()
-      })
-    }
-  }
-
-  private handlePlayerKilledEvent(data: any) {
-    const victim = Object.values(this.gameState.players).find(p => p.id === data.victimId)
-    
-    if (victim) {
-      // Create death effect
-      this.particleEmitter.setPosition(victim.x, victim.y)
-      this.particleEmitter.explode(20)
-      
-      // Show kill message
-      const killText = this.add.text(victim.x, victim.y, `${data.killerName} eliminated ${data.victimName}!`, {
-        fontSize: '14px',
-        color: '#ffff00',
-        backgroundColor: '#000000',
-        padding: { x: 5, y: 5 }
-      }).setOrigin(0.5)
-      
-      this.tweens.add({
-        targets: killText,
-        y: victim.y - 50,
-        alpha: 0,
-        duration: 2000,
-        onComplete: () => killText.destroy()
-      })
-    }
-  }
-
-  private handlePowerUpCollectedEvent(data: any) {
-    // Create collection effect
-    const player = Object.values(this.gameState.players).find(p => p.id === data.playerId)
-    
-    if (player) {
-      this.particleEmitter.setPosition(player.x, player.y)
-      this.particleEmitter.explode(15)
-      
-      // Show power-up text
-      const powerUpText = this.add.text(player.x, player.y - 30, `+${data.powerUpType.toUpperCase()}!`, {
-        fontSize: '12px',
-        color: '#ffffff',
-        backgroundColor: '#000000',
-        padding: { x: 3, y: 3 }
-      }).setOrigin(0.5)
-      
-      this.tweens.add({
-        targets: powerUpText,
-        y: player.y - 50,
-        alpha: 0,
-        duration: 1500,
-        onComplete: () => powerUpText.destroy()
-      })
-    }
-  }
-
-  // Visual effects
-  private createHarvestEffect(x: number, y: number) {
-    this.particleEmitter.setPosition(x, y)
-    this.particleEmitter.explode(10)
-  }
-
-  private createAttackEffect(fromX: number, fromY: number, toX: number, toY: number) {
-    const line = this.add.line(0, 0, fromX, fromY, toX, toY, 0xff6b6b, 1)
-    line.setLineWidth(3)
-    
-    this.tweens.add({
-      targets: line,
-      alpha: 0,
-      duration: 200,
-      onComplete: () => line.destroy()
-    })
-  }
-
-  private createBeaconEffect(x: number, y: number) {
-    const beacon = this.add.circle(x, y, 5, 0xf39c12, 0.8)
-    
-    this.tweens.add({
-      targets: beacon,
-      scaleX: 3,
-      scaleY: 3,
-      alpha: 0,
-      duration: 1000,
-      onComplete: () => beacon.destroy()
-    })
-  }
-
-  private createBoostEffect(x: number, y: number) {
-    this.particleEmitter.setPosition(x, y)
-    this.particleEmitter.explode(15)
-  }
-
-  private createCaptureEffect(nexusId: string) {
-    const nexus = this.gameState.nexuses.find(n => n.id === nexusId)
-    if (nexus) {
-      this.particleEmitter.setPosition(nexus.x, nexus.y)
-      this.particleEmitter.explode(20)
-    }
-  }
-
-  private createPulseEffect() {
-    this.gameState.nexuses.forEach(nexus => {
-      if (nexus.controlledBy) {
-        const pulse = this.add.circle(nexus.x, nexus.y, 30, 0xffd700, 0.6)
-        
-        this.tweens.add({
-          targets: pulse,
-          scaleX: 4,
-          scaleY: 4,
-          alpha: 0,
-          duration: 2000,
-          onComplete: () => pulse.destroy()
-        })
-      }
-    })
-  }
-
-  private renderHealthBars() {
-    const players = Object.values(this.gameState.players)
-    
-    players.forEach(player => {
-      let healthBarContainer = this.playerHealthBars.get(player.id)
-      
-      if (!healthBarContainer) {
-        // Create health bar container
-        healthBarContainer = this.add.container(player.x, player.y - 35)
-        healthBarContainer.setDepth(150)
-        
-        // Background bar (dark)
-        const bgBar = this.add.rectangle(0, 0, 44, 8, 0x333333)
-        bgBar.setStrokeStyle(1, 0x000000)
-        
-        // Health bar (gradient based on health)
-        const healthBar = this.add.rectangle(0, 0, 40, 6, 0x00ff00)
-        healthBar.setData('isHealthBar', true)
-        
-        healthBarContainer.add([bgBar, healthBar])
-        this.playerHealthBars.set(player.id, healthBarContainer)
-      }
-      
-      // Get sprite position for smooth following
-      const sprite = this.playerSprites.get(player.id)
-      if (sprite) {
-        healthBarContainer.setPosition(sprite.x, sprite.y - 35)
-      }
-      
-      // Show/hide based on alive status
-      healthBarContainer.setVisible(player.isAlive)
-      
-      // Update health bar width and color
-      const healthBar = healthBarContainer.list.find((obj: any) => obj.getData?.('isHealthBar'))
-      if (healthBar) {
-        const healthPercent = player.health / player.maxHealth
-        const newWidth = 40 * healthPercent
-        ;(healthBar as Phaser.GameObjects.Rectangle).setSize(Math.max(0, newWidth), 6)
-        ;(healthBar as Phaser.GameObjects.Rectangle).setPosition(-(40 - newWidth) / 2, 0)
-        
-        // Color based on health percentage
-        if (healthPercent > 0.6) {
-          ;(healthBar as Phaser.GameObjects.Rectangle).fillColor = 0x00ff00
-        } else if (healthPercent > 0.3) {
-          ;(healthBar as Phaser.GameObjects.Rectangle).fillColor = 0xffff00
-        } else {
-          ;(healthBar as Phaser.GameObjects.Rectangle).fillColor = 0xff0000
-        }
-      }
-    })
-    
-    // Remove health bars for disconnected players
-    this.playerHealthBars.forEach((container, playerId) => {
-      const player = players.find(p => p.id === playerId)
-      if (!player) {
         container.destroy()
-        this.playerHealthBars.delete(playerId)
+        this.playerSprites.delete(playerId)
       }
     })
+  }
+
+  private getAbilityIcon(type: string): string {
+    switch (type) {
+      case 'dash': return '⚡'
+      case 'heal': return '💚'
+      case 'shield': return '🛡️'
+      case 'scan': return '👁️'
+      default: return '❓'
+    }
+  }
+
+  private createPlayerSprite(player: Player): Phaser.GameObjects.Container {
+    const container = this.add.container(player.x, player.y)
+    
+    // Shadow
+    const shadow = this.add.ellipse(2, 3, 22, 10, 0x000000, 0.3)
+    
+    // Player body
+    const color = Phaser.Display.Color.HexStringToColor(player.color).color
+    const body = this.add.circle(0, 0, 12, color)
+    body.setStrokeStyle(2, 0xffffff)
+    
+    // Ability Icon (Class Indicator)
+    const abilityIcon = this.add.text(0, 0, this.getAbilityIcon(player.abilityType), {
+      fontSize: '12px'
+    }).setOrigin(0.5)
+
+    // Direction indicator
+    const direction = this.add.triangle(15, 0, 0, -5, 0, 5, 8, 0, color)
+    direction.setAlpha(0.8)
+    
+    // Health bar background
+    const healthBg = this.add.rectangle(0, -22, 30, 5, 0xff0000)
+    
+    // Health bar fill
+    const healthFill = this.add.rectangle(-15, -22, 30, 5, 0x00ff00)
+    healthFill.setOrigin(0, 0.5)
+    
+    // Player name
+    const nameText = this.add.text(0, -32, player.name, {
+      fontSize: '11px',
+      color: '#ffffff',
+      stroke: '#000000',
+      strokeThickness: 2
+    }).setOrigin(0.5)
+    
+    // Kill streak badge
+    const killStreakBadge = this.add.text(0, 18, '', {
+      fontSize: '10px',
+      color: '#ff0000',
+      fontStyle: 'bold'
+    }).setOrigin(0.5).setVisible(false)
+    
+    // Invincibility indicator
+    const invincibleRing = this.add.circle(0, 0, 18, 0xffffff, 0)
+    invincibleRing.setStrokeStyle(3, 0xffffff, 0.5)
+    invincibleRing.setVisible(false)
+    
+    container.add([shadow, body, abilityIcon, direction, healthBg, healthFill, nameText, killStreakBadge, invincibleRing])
+    container.setData('body', body)
+    container.setData('abilityIcon', abilityIcon)
+    container.setData('direction', direction)
+    container.setData('healthFill', healthFill)
+    container.setData('nameText', nameText)
+    container.setData('killStreakBadge', killStreakBadge)
+    container.setData('invincibleRing', invincibleRing)
+    
+    return container
+  }
+
+  private updatePlayerSprite(container: Phaser.GameObjects.Container, player: Player) {
+<<<<<<< HEAD
+    // Smooth position interpolation with better performance
+    const lerpFactor = 0.35 // Slightly faster for better responsiveness
+    const distance = Phaser.Math.Distance.Between(container.x, container.y, player.x, player.y)
+    
+    // Use different lerp factors based on distance for smoother movement
+    const adaptiveLerp = distance > 50 ? lerpFactor * 1.5 : lerpFactor
+    container.x = Phaser.Math.Linear(container.x, player.x, adaptiveLerp)
+    container.y = Phaser.Math.Linear(container.y, player.y, adaptiveLerp)
+=======
+    const direction = container.getData('direction') as Phaser.GameObjects.Triangle
+
+    // Calculate angle for rotation based on movement
+    const dx = player.x - container.x
+    const dy = player.y - container.y
+    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+      const angle = Math.atan2(dy, dx)
+      direction.setRotation(angle)
+      
+      // Position direction indicator relative to body based on angle
+      direction.setPosition(Math.cos(angle) * 15, Math.sin(angle) * 15)
+    }
+
+    // Smooth position interpolation
+    const lerpFactor = 0.3
+    container.x = Phaser.Math.Linear(container.x, player.x, lerpFactor)
+    container.y = Phaser.Math.Linear(container.y, player.y, lerpFactor)
+>>>>>>> main
+    
+    const healthFill = container.getData('healthFill') as Phaser.GameObjects.Rectangle
+    const killStreakBadge = container.getData('killStreakBadge') as Phaser.GameObjects.Text
+    const invincibleRing = container.getData('invincibleRing') as Phaser.GameObjects.Arc
+    const body = container.getData('body') as Phaser.GameObjects.Arc
+    
+    // Update health bar
+    const healthPercent = player.health / player.maxHealth
+    healthFill.width = 30 * healthPercent
+    healthFill.fillColor = healthPercent > 0.5 ? 0x00ff00 : healthPercent > 0.25 ? 0xffff00 : 0xff0000
+    
+    // Update kill streak badge
+    if (player.killStreak >= 3) {
+      killStreakBadge.setText(`🔥${player.killStreak}`)
+      killStreakBadge.setVisible(true)
+    } else {
+      killStreakBadge.setVisible(false)
+    }
+    
+    // Update invincibility
+    const isInvincible = Date.now() < player.invincibleUntil
+    invincibleRing.setVisible(isInvincible)
+    if (isInvincible) {
+      invincibleRing.alpha = 0.5 + Math.sin(Date.now() / 100) * 0.3
+    }
+    
+    // Highlight current player
+    if (player.id === this.currentPlayer?.id) {
+      body.setStrokeStyle(3, 0xffffff)
+      container.setScale(1.1)
+    } else {
+      body.setStrokeStyle(2, 0xffffff)
+      container.setScale(1)
+    }
+    
+    // Fade dead players
+    container.setAlpha(player.isAlive ? 1 : 0.3)
   }
 
   private renderPowerUps() {
@@ -785,146 +736,663 @@ export class GameScene extends Phaser.Scene {
     this.gameState.powerUps.forEach(powerUp => {
       if (powerUp.collected) return
       
-      let sprite = this.powerUpSprites.get(powerUp.id)
+      let container = this.powerUpSprites.get(powerUp.id)
       
-      if (!sprite) {
-        // Create power-up as a diamond shape
-        const color = this.getPowerUpColor(powerUp.type)
-        const graphics = this.add.graphics()
-        graphics.fillStyle(color, 0.9)
-        graphics.fillRoundedRect(-12, -12, 24, 24, 6)
-        graphics.lineStyle(2, 0xffffff, 1)
-        graphics.strokeRoundedRect(-12, -12, 24, 24, 6)
-        
-        // Create container for the power-up
-        const container = this.add.container(powerUp.x, powerUp.y, [graphics])
-        container.setDepth(80)
-        sprite = container
-        
-        // Add icon text
-        const iconText = this.add.text(0, 0, this.getPowerUpIcon(powerUp.type), {
-          fontSize: '14px',
-        }).setOrigin(0.5)
-        container.add(iconText)
-        
-        // Add pulsing animation
-        this.tweens.add({
-          targets: sprite,
-          scaleX: 1.15,
-          scaleY: 1.15,
-          duration: 800,
-          yoyo: true,
-          repeat: -1,
-          ease: 'Sine.easeInOut'
-        })
-        
-        // Floating animation
-        this.tweens.add({
-          targets: sprite,
-          y: powerUp.y - 5,
-          duration: 1200,
-          yoyo: true,
-          repeat: -1,
-          ease: 'Sine.easeInOut'
-        })
-        
-        this.powerUpSprites.set(powerUp.id, sprite as any)
+      if (!container) {
+        container = this.createPowerUpSprite(powerUp)
+        this.powerUpSprites.set(powerUp.id, container)
       }
     })
     
-    // Remove collected or expired power-ups
-    this.powerUpSprites.forEach((sprite, powerUpId) => {
-      const powerUp = this.gameState.powerUps?.find(p => p.id === powerUpId && !p.collected)
-      if (!powerUp) {
-        this.tweens.killTweensOf(sprite)
-        sprite.destroy()
+    // Remove collected power-ups
+    this.powerUpSprites.forEach((container, powerUpId) => {
+      const powerUp = this.gameState.powerUps?.find(p => p.id === powerUpId)
+      if (!powerUp || powerUp.collected) {
+        container.destroy()
         this.powerUpSprites.delete(powerUpId)
       }
     })
   }
-  
+
+  private createPowerUpSprite(powerUp: PowerUp): Phaser.GameObjects.Container {
+    const container = this.add.container(powerUp.x, powerUp.y)
+    const color = this.getPowerUpColor(powerUp.type)
+    
+    // Glow effect
+    const glow = this.add.circle(0, 0, 18, color, 0.3)
+    
+    // Main shape
+    const shape = this.add.circle(0, 0, 12, color)
+    shape.setStrokeStyle(2, 0xffffff)
+    
+    // Icon
+    const icon = this.add.text(0, 0, this.getPowerUpIcon(powerUp.type), {
+      fontSize: '14px'
+    }).setOrigin(0.5)
+    
+    container.add([glow, shape, icon])
+    
+    // Pulsing animation
+    this.tweens.add({
+      targets: container,
+      scaleX: 1.15,
+      scaleY: 1.15,
+      duration: 800,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut'
+    })
+    
+    // Float animation
+    this.tweens.add({
+      targets: container,
+      y: powerUp.y - 5,
+      duration: 1200,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut'
+    })
+    
+    return container
+  }
+
+  private getPowerUpColor(type: string): number {
+    switch (type) {
+      case 'speed': return 0x00ffff
+      case 'shield': return 0x3498db
+      case 'damage': return 0xff4444
+      case 'health': return 0x00ff00
+      case 'energy': return 0xf1c40f
+      default: return 0xffffff
+    }
+  }
+
   private getPowerUpIcon(type: string): string {
     switch (type) {
       case 'speed': return '⚡'
       case 'shield': return '🛡️'
       case 'damage': return '⚔️'
       case 'health': return '❤️'
-      case 'energy': return '🔋'
-      default: return '✨'
+      case 'energy': return '✨'
+      default: return '?'
     }
   }
 
-  private getPowerUpColor(type: string): number {
-    switch (type) {
-      case 'speed': return 0x00ffff    // Cyan
-      case 'shield': return 0x0000ff   // Blue
-      case 'damage': return 0xff0000   // Red
-      case 'health': return 0x00ff00   // Green
-      case 'energy': return 0xffff00   // Yellow
-      default: return 0xffffff         // White
+  private getNearbyNexus(): Nexus | null {
+    return this.gameState.nexuses.find(nexus => {
+      const distance = Phaser.Math.Distance.Between(
+        this.currentPlayer.x, this.currentPlayer.y,
+        nexus.x, nexus.y
+      )
+      return distance < 60
+    }) || null
+  }
+
+  private getPlayerAtPosition(x: number, y: number): Player | null {
+    return Object.values(this.gameState.players).find(player => {
+      const distance = Phaser.Math.Distance.Between(player.x, player.y, x, y)
+      return distance < 25 && player.isAlive
+    }) || null
+  }
+
+  private handleGameEvent(event: any) {
+    switch (event.type) {
+      case 'nexus-captured':
+        this.effectsQueue.push(() => this.createCaptureEffect(event.data.nexusId))
+        this.showNotification(`${event.data.playerName} captured a nexus!`, 0xffd700)
+        break
+      case 'energy-pulse':
+        this.effectsQueue.push(() => this.createPulseEffect())
+        break
+      case 'player-attacked':
+        this.effectsQueue.push(() => this.handlePlayerAttackedEvent(event.data))
+        break
+      case 'player-killed':
+        this.effectsQueue.push(() => this.handlePlayerKilledEvent(event.data))
+        break
+      case 'player-respawned':
+        this.effectsQueue.push(() => this.createRespawnEffect(event.data.x, event.data.y))
+        break
+      case 'powerup-collected':
+        this.effectsQueue.push(() => this.handlePowerUpCollectedEvent(event.data))
+        break
+      case 'beacon-deployed':
+        this.effectsQueue.push(() => this.createBeaconEffect(event.data.x, event.data.y))
+        break
+      case 'ability-used':
+        this.effectsQueue.push(() => this.handleAbilityUsedEvent(event.data))
+        break
+      case 'achievement-unlocked':
+        this.showAchievement(event.data.achievement)
+        break
     }
+  }
+
+  private handlePlayerAttackedEvent(data: any) {
+    const attacker = this.gameState.players[data.attackerId]
+    const target = this.gameState.players[data.targetId]
+    
+    if (attacker && target) {
+      this.createAttackEffect(attacker.x, attacker.y, target.x, target.y)
+      
+      // Screen shake for attacks
+      if (data.attackerId === this.currentPlayer?.id || data.targetId === this.currentPlayer?.id) {
+        this.addScreenShake(data.damage * 0.15)
+      }
+      
+      // Damage number with color based on damage
+      const damageColor = data.damage > 40 ? '#ff0000' : data.damage > 25 ? '#ff4444' : '#ff8888'
+      const damageText = this.add.text(target.x, target.y - 20, `-${data.damage}`, {
+        fontSize: data.damage > 40 ? '22px' : '18px',
+        color: damageColor,
+        fontStyle: 'bold',
+        stroke: '#000000',
+        strokeThickness: 4
+      }).setOrigin(0.5)
+      
+      this.tweens.add({
+        targets: damageText,
+        y: target.y - 50,
+        alpha: 0,
+        scale: 1.5,
+        duration: 800,
+        ease: 'Power2',
+        onComplete: () => damageText.destroy()
+      })
+
+      // Show combo text for current player
+      if (data.attackerId === this.currentPlayer?.id && data.comboCount > 1) {
+        this.showCombo(data.comboCount)
+      }
+    }
+  }
+
+  private handlePlayerKilledEvent(data: any) {
+    const victim = this.gameState.players[data.victimId]
+    
+    if (victim) {
+      this.createDeathEffect(victim.x, victim.y)
+      
+      // Screen shake for kills
+      if (data.killerId === this.currentPlayer?.id || data.victimId === this.currentPlayer?.id) {
+        this.addScreenShake(8)
+      }
+      
+      // Kill notification with enhanced visuals
+      const isMyKill = data.killerId === this.currentPlayer?.id
+      const killText = this.add.text(400, 100, 
+        `💀 ${data.killerName} eliminated ${data.victimName}!`, {
+        fontSize: isMyKill ? '18px' : '16px',
+        color: isMyKill ? '#ffd700' : '#ff4444',
+        backgroundColor: 'rgba(0, 0, 0, 0.9)',
+        padding: { x: 15, y: 10 },
+        fontStyle: isMyKill ? 'bold' : 'normal'
+      }).setOrigin(0.5).setDepth(2000)
+      
+      this.tweens.add({
+        targets: killText,
+        y: 80,
+        alpha: 0,
+        duration: 3000,
+        ease: 'Power2',
+        onComplete: () => killText.destroy()
+      })
+
+      // Kill streak notification with enhanced effects
+      if (data.killStreak >= 3) {
+        this.showAchievement(`${data.killerName}: ${data.killStreak} Kill Streak! 🔥`)
+        if (data.killerId === this.currentPlayer?.id) {
+          this.addScreenShake(4)
+        }
+      }
+      
+      // Mega kill for 5+ streak
+      if (data.killStreak >= 5) {
+        this.showAchievement(`${data.killerName}: UNSTOPPABLE! ⚡`)
+      }
+    }
+  }
+
+  private handlePowerUpCollectedEvent(data: any) {
+    const player = this.gameState.players[data.playerId]
+    if (player) {
+      const color = this.getPowerUpColor(data.powerUpType)
+      this.createCollectionEffect(player.x, player.y, color)
+      
+      if (data.playerId === this.currentPlayer?.id) {
+        this.showNotification(`+${data.powerUpType.toUpperCase()}!`, color)
+      }
+    }
+  }
+
+  private handleAbilityUsedEvent(data: any) {
+    switch (data.ability) {
+      case 'dash':
+        this.createDashEffect(data.x, data.y)
+        break
+      case 'heal':
+        const player = this.gameState.players[data.playerId]
+        if (player) this.createHealEffect(player.x, player.y)
+        break
+      case 'shield':
+        const shieldPlayer = this.gameState.players[data.playerId]
+        if (shieldPlayer) this.createShieldEffect(shieldPlayer.x, shieldPlayer.y)
+        break
+      case 'scan':
+        this.createScanEffect()
+        break
+    }
+  }
+
+  // Visual Effects
+  private createMoveTargetEffect(x: number, y: number) {
+    const ring = this.add.circle(x, y, 10, 0xffffff, 0)
+    ring.setStrokeStyle(2, 0xffffff, 0.8)
+    
+    this.tweens.add({
+      targets: ring,
+      scaleX: 2,
+      scaleY: 2,
+      alpha: 0,
+      duration: 400,
+      onComplete: () => ring.destroy()
+    })
+  }
+
+  private createHarvestEffect(x: number, y: number) {
+    for (let i = 0; i < 8; i++) {
+      const angle = (i / 8) * Math.PI * 2
+      const particle = this.add.circle(x, y, 4, 0x27ae60)
+      
+      this.tweens.add({
+        targets: particle,
+        x: x + Math.cos(angle) * 40,
+        y: y + Math.sin(angle) * 40,
+        alpha: 0,
+        scale: 0,
+        duration: 500,
+        ease: 'Power2',
+        onComplete: () => particle.destroy()
+      })
+    }
+  }
+
+  private createAttackEffect(fromX: number, fromY: number, toX: number, toY: number) {
+    // Attack line with gradient effect
+    const line = this.add.line(0, 0, fromX, fromY, toX, toY, 0xff4444, 1)
+    line.setLineWidth(5)
+    line.setDepth(100)
+    
+    this.tweens.add({
+      targets: line,
+      alpha: 0,
+      lineWidth: 2,
+      duration: 150,
+      onComplete: () => line.destroy()
+    })
+
+    // Multiple impact rings for better effect
+    for (let i = 0; i < 3; i++) {
+      const impact = this.add.circle(toX, toY, 5, 0xff4444, 0.8 - i * 0.2)
+      this.tweens.add({
+        targets: impact,
+        scaleX: 3 + i,
+        scaleY: 3 + i,
+        alpha: 0,
+        duration: 200 + i * 50,
+        delay: i * 30,
+        onComplete: () => impact.destroy()
+      })
+    }
+    
+    // Spark particles
+    for (let i = 0; i < 5; i++) {
+      const angle = (Math.PI * 2 * i) / 5
+      const spark = this.add.circle(toX, toY, 3, 0xffaa00)
+      this.tweens.add({
+        targets: spark,
+        x: toX + Math.cos(angle) * 30,
+        y: toY + Math.sin(angle) * 30,
+        alpha: 0,
+        scale: 0,
+        duration: 300,
+        ease: 'Power2',
+        onComplete: () => spark.destroy()
+      })
+    }
+  }
+
+  private createBeaconEffect(x: number, y: number) {
+    const beacon = this.add.circle(x, y, 8, 0xf39c12, 0.8)
+    
+    const ring1 = this.add.circle(x, y, 8, 0xf39c12, 0)
+    ring1.setStrokeStyle(3, 0xf39c12, 0.8)
+    
+    const ring2 = this.add.circle(x, y, 8, 0xf39c12, 0)
+    ring2.setStrokeStyle(2, 0xf39c12, 0.5)
+
+    // First ring animation
+    this.tweens.add({
+      targets: ring1,
+      scaleX: 8,
+      scaleY: 8,
+      alpha: 0,
+      duration: 1500,
+      onComplete: () => ring1.destroy()
+    })
+    
+    // Second ring animation with delay
+    this.tweens.add({
+      targets: ring2,
+      scaleX: 8,
+      scaleY: 8,
+      alpha: 0,
+      duration: 1500,
+      delay: 200,
+      onComplete: () => ring2.destroy()
+    })
+
+    this.tweens.add({
+      targets: beacon,
+      alpha: 0,
+      duration: 2000,
+      onComplete: () => beacon.destroy()
+    })
+  }
+
+  private createBoostEffect(x: number, y: number) {
+    for (let i = 0; i < 12; i++) {
+      const angle = (i / 12) * Math.PI * 2
+      const particle = this.add.circle(x + Math.cos(angle) * 20, y + Math.sin(angle) * 20, 3, 0xf39c12)
+      
+      this.tweens.add({
+        targets: particle,
+        x: x,
+        y: y,
+        alpha: 0,
+        scale: 2,
+        duration: 400,
+        ease: 'Power2',
+        onComplete: () => particle.destroy()
+      })
+    }
+  }
+
+  private createCaptureEffect(nexusId: string) {
+    const nexus = this.gameState.nexuses.find(n => n.id === nexusId)
+    if (!nexus) return
+    
+    const controllingPlayer = nexus.controlledBy ? this.gameState.players[nexus.controlledBy] : null
+    const color = controllingPlayer ? Phaser.Display.Color.HexStringToColor(controllingPlayer.color).color : 0xffd700
+    
+    // Enhanced burst of particles with color matching
+    for (let i = 0; i < 24; i++) {
+      const angle = (i / 24) * Math.PI * 2
+      const particle = this.add.circle(nexus.x, nexus.y, 4 + Math.random() * 3, color)
+      
+      this.tweens.add({
+        targets: particle,
+        x: nexus.x + Math.cos(angle) * (60 + Math.random() * 40),
+        y: nexus.y + Math.sin(angle) * (60 + Math.random() * 40),
+        alpha: 0,
+        scale: 0,
+        duration: 600 + Math.random() * 200,
+        ease: 'Power2',
+        onComplete: () => particle.destroy()
+      })
+    }
+
+    // Multi-layered flash effect
+    for (let layer = 0; layer < 3; layer++) {
+      const flash = this.add.circle(nexus.x, nexus.y, 30 + layer * 10, color, 0.6 - layer * 0.2)
+      this.tweens.add({
+        targets: flash,
+        scaleX: 2.5 + layer * 0.5,
+        scaleY: 2.5 + layer * 0.5,
+        alpha: 0,
+        duration: 400 + layer * 100,
+        delay: layer * 50,
+        ease: 'Power2',
+        onComplete: () => flash.destroy()
+      })
+    }
+    
+    // Screen shake effect
+    this.cameras.main.shake(200, 0.01)
+  }
+
+  private createPulseEffect() {
+    this.gameState.nexuses.forEach(nexus => {
+      if (nexus.controlledBy) {
+        const player = this.gameState.players[nexus.controlledBy]
+        const color = player ? Phaser.Display.Color.HexStringToColor(player.color).color : 0xffd700
+        
+        for (let i = 0; i < 3; i++) {
+          const pulse = this.add.circle(nexus.x, nexus.y, 30, color, 0)
+          pulse.setStrokeStyle(4, color, 0.8)
+          
+          this.tweens.add({
+            targets: pulse,
+            scaleX: 4,
+            scaleY: 4,
+            alpha: 0,
+            duration: 1500,
+            delay: i * 300,
+            ease: 'Power2',
+            onComplete: () => pulse.destroy()
+          })
+        }
+      }
+    })
+  }
+
+  private createDeathEffect(x: number, y: number) {
+    // Enhanced particle burst
+    for (let i = 0; i < 30; i++) {
+      const angle = Math.random() * Math.PI * 2
+      const speed = 40 + Math.random() * 60
+      const colors = [0xff0000, 0xff4444, 0xff6666, 0xffaa00]
+      const color = colors[Math.floor(Math.random() * colors.length)]
+      const particle = this.add.circle(x, y, 4 + Math.random() * 4, color)
+      particle.setDepth(150)
+      
+      this.tweens.add({
+        targets: particle,
+        x: x + Math.cos(angle) * speed,
+        y: y + Math.sin(angle) * speed - 20, // Add upward bias
+        alpha: 0,
+        scale: 0,
+        duration: 500 + Math.random() * 300,
+        ease: 'Power3',
+        onComplete: () => particle.destroy()
+      })
+    }
+    
+    // Shockwave effect
+    const shockwave = this.add.circle(x, y, 20, 0xff0000, 0)
+    shockwave.setStrokeStyle(5, 0xff0000, 0.8)
+    shockwave.setDepth(149)
+    
+    this.tweens.add({
+      targets: shockwave,
+      scaleX: 4,
+      scaleY: 4,
+      alpha: 0,
+      duration: 500,
+      ease: 'Power2',
+      onComplete: () => shockwave.destroy()
+    })
+  }
+
+  private createRespawnEffect(x: number, y: number) {
+    const ring = this.add.circle(x, y, 50, 0x00ff00, 0)
+    ring.setStrokeStyle(4, 0x00ff00, 0.8)
+    
+    this.tweens.add({
+      targets: ring,
+      scaleX: 0.2,
+      scaleY: 0.2,
+      alpha: 0,
+      duration: 500,
+      ease: 'Power2',
+      onComplete: () => ring.destroy()
+    })
+  }
+
+  private createCollectionEffect(x: number, y: number, color: number) {
+    for (let i = 0; i < 8; i++) {
+      const angle = (i / 8) * Math.PI * 2
+      const particle = this.add.circle(x + Math.cos(angle) * 30, y + Math.sin(angle) * 30, 4, color)
+      
+      this.tweens.add({
+        targets: particle,
+        x: x,
+        y: y - 20,
+        alpha: 0,
+        duration: 400,
+        ease: 'Power2',
+        onComplete: () => particle.destroy()
+      })
+    }
+  }
+
+  private createDashEffect(x: number, y: number) {
+    const trail = this.add.circle(x, y, 15, 0x00ffff, 0.5)
+    this.tweens.add({
+      targets: trail,
+      alpha: 0,
+      scaleX: 2,
+      scaleY: 2,
+      duration: 300,
+      onComplete: () => trail.destroy()
+    })
+  }
+
+  private createHealEffect(x: number, y: number) {
+    const cross1 = this.add.rectangle(x, y, 6, 24, 0x00ff00)
+    const cross2 = this.add.rectangle(x, y, 24, 6, 0x00ff00)
+    
+    this.tweens.add({
+      targets: [cross1, cross2],
+      y: y - 30,
+      alpha: 0,
+      duration: 800,
+      ease: 'Power2',
+      onComplete: () => { cross1.destroy(); cross2.destroy() }
+    })
+  }
+
+  private createShieldEffect(x: number, y: number) {
+    const shield = this.add.circle(x, y, 20, 0x3498db, 0)
+    shield.setStrokeStyle(4, 0x3498db, 0.8)
+    
+    this.tweens.add({
+      targets: shield,
+      scaleX: 1.5,
+      scaleY: 1.5,
+      duration: 500,
+      yoyo: true,
+      repeat: 2,
+      onComplete: () => shield.destroy()
+    })
+  }
+
+  private createScanEffect() {
+    const scan = this.add.circle(this.currentPlayer.x, this.currentPlayer.y, 10, 0xff00ff, 0)
+    scan.setStrokeStyle(2, 0xff00ff, 0.8)
+    
+    this.tweens.add({
+      targets: scan,
+      scaleX: 50,
+      scaleY: 50,
+      alpha: 0,
+      duration: 1500,
+      ease: 'Power2',
+      onComplete: () => scan.destroy()
+    })
+  }
+
+  private showCombo(count: number) {
+    this.comboText.setText(`${count}x COMBO!`)
+    this.comboText.setAlpha(1)
+    this.comboText.setScale(0.5)
+    
+    this.tweens.add({
+      targets: this.comboText,
+      scale: 1.2,
+      duration: 200,
+      yoyo: true,
+      onComplete: () => {
+        this.tweens.add({
+          targets: this.comboText,
+          alpha: 0,
+          delay: 800,
+          duration: 300
+        })
+      }
+    })
+  }
+
+  private showNotification(text: string, color: number) {
+    const notification = this.add.text(400, 150, text, {
+      fontSize: '18px',
+      color: '#' + color.toString(16).padStart(6, '0'),
+      fontStyle: 'bold',
+      stroke: '#000000',
+      strokeThickness: 3
+    }).setOrigin(0.5).setDepth(2000)
+    
+    this.tweens.add({
+      targets: notification,
+      y: 120,
+      alpha: 0,
+      duration: 1500,
+      ease: 'Power2',
+      onComplete: () => notification.destroy()
+    })
+  }
+
+  private showAchievement(text: string) {
+    const achievement = this.add.text(400, 200, `🏆 ${text}`, {
+      fontSize: '20px',
+      color: '#ffd700',
+      fontStyle: 'bold',
+      stroke: '#000000',
+      strokeThickness: 4,
+      backgroundColor: 'rgba(0, 0, 0, 0.7)',
+      padding: { x: 15, y: 10 }
+    }).setOrigin(0.5).setDepth(2001).setScale(0)
+    
+    this.tweens.add({
+      targets: achievement,
+      scale: 1,
+      duration: 300,
+      ease: 'Back.easeOut',
+      onComplete: () => {
+        this.tweens.add({
+          targets: achievement,
+          y: 180,
+          alpha: 0,
+          delay: 2000,
+          duration: 500,
+          onComplete: () => achievement.destroy()
+        })
+      }
+    })
   }
 
   private renderLeaderboard() {
     if (!this.gameState.leaderboard) return
     
-    let leaderboardText = '🏆 LEADERBOARD\n'
+    let text = '🏆 LEADERBOARD\n'
     this.gameState.leaderboard.slice(0, 5).forEach((entry, index) => {
-      const isCurrentPlayer = entry.playerId === this.currentPlayer?.id
-      const prefix = isCurrentPlayer ? '► ' : '  '
+      const isMe = entry.playerId === this.currentPlayer?.id
+      const prefix = isMe ? '► ' : '  '
       const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`
-      leaderboardText += `${prefix}${medal} ${entry.playerName.slice(0, 10)}: ${entry.score}\n`
+      const streak = entry.killStreak >= 3 ? ` 🔥${entry.killStreak}` : ''
+      text += `${prefix}${medal} ${entry.playerName}: ${entry.score}${streak}\n`
     })
     
-    this.leaderboardText.setText(leaderboardText)
-    
-    // Update phase text
-    if (this.phaseText && this.gameState.gamePhase) {
-      const phaseNames: Record<string, string> = {
-        'waiting': '⏳ Waiting...',
-        'spawn': '🎯 SPAWN',
-        'expansion': '🌍 EXPAND',
-        'conflict': '⚔️ CONFLICT',
-        'pulse': '💥 PULSE',
-        'ended': '🏁 GAME OVER'
-      }
-      this.phaseText.setText(phaseNames[this.gameState.gamePhase] || this.gameState.gamePhase)
-    }
-  }
-
-  private handleAttackNearestPlayer() {
-    if (!this.currentPlayer || !this.gameState?.players) return
-    
-    const players = Object.values(this.gameState.players)
-    let nearestPlayer: Player | null = null
-    let nearestDistance = Infinity
-    
-    for (const player of players) {
-      if (player.id === this.currentPlayer.id || !player.isAlive) continue
-      
-      const distance = Phaser.Math.Distance.Between(
-        this.currentPlayer.x, this.currentPlayer.y,
-        player.x, player.y
-      )
-      
-      if (distance < nearestDistance && distance <= this.currentPlayer.attackRange) {
-        nearestDistance = distance
-        nearestPlayer = player
-      }
-    }
-    
-    if (nearestPlayer) {
-      const target = nearestPlayer
-      this.socket.emit('player-action', {
-        type: 'attack',
-        data: { targetId: target.id }
-      })
-      
-      // Visual feedback
-      this.createAttackEffect(
-        this.currentPlayer.x, this.currentPlayer.y,
-        target.x, target.y
-      )
-    }
+    this.leaderboardText.setText(text)
   }
 }

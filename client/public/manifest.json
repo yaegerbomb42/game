@@ -1,0 +1,16 @@
+{
+  "name": "Nexus Wars",
+  "short_name": "Nexus Wars",
+  "description": "Fast-paced 2D multiplayer strategy game",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1a1a2e",
+  "theme_color": "#3498db",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    }
+  ]
+}
