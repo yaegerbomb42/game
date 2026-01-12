@@ -1,0 +1,5 @@
+provider_default = "gemini"
+
+[ai_providers.gemini]
+api_key = "AIzaSyBF6fAuMhaokjQyw9tLH6ETc61mA0FVbRc"
+model = "gemini-1.5-flash"

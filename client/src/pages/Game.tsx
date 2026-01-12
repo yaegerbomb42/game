@@ -98,7 +98,8 @@ const Game = () => {
     if (!existingSocket) {
       socket.on('connect', () => {
         const playerName = localStorage.getItem('playerName') || 'Player'
-        socket.emit('join-room', { roomId, playerName })
+        const userId = localStorage.getItem('userId')
+        socket.emit('join-room', { roomId, playerName, userId })
       })
     } else {
       socket.emit('get-game-state')
@@ -171,7 +172,7 @@ const Game = () => {
       }
 
       gameRef.current = new Phaser.Game(config)
-      
+
       gameRef.current.events.once('ready', () => {
         const scene = gameRef.current?.scene.getScene('GameScene') as GameScene
         if (scene && socketRef.current) {
@@ -195,7 +196,7 @@ const Game = () => {
 
     const interval = setInterval(() => {
       const elapsed = Date.now() - gameState.phaseStartTime
-      
+
       let phaseDuration = 0
       switch (gameState.gamePhase) {
         case 'spawn': phaseDuration = 10000; break
@@ -203,7 +204,7 @@ const Game = () => {
         case 'conflict': phaseDuration = 30000; break
         case 'pulse': phaseDuration = 15000; break
       }
-      
+
       setTimeRemaining(Math.max(0, phaseDuration - elapsed))
     }, 100)
 
@@ -259,137 +260,91 @@ const Game = () => {
   return (
     <div className="game-container">
       <div id="game-container" className="game-canvas"></div>
-      
+
       <div className="ui-overlay">
         {/* Player Stats HUD */}
-        <div className="hud" style={{ 
-          background: 'rgba(0, 0, 0, 0.8)',
-          borderRadius: '12px',
-          padding: '15px',
-          minWidth: '180px'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-            <div style={{ 
-              width: '30px', 
-              height: '30px', 
-              backgroundColor: currentPlayer.color,
-              borderRadius: '50%',
-              border: '2px solid white'
-            }} />
+        <div className="hud-panel hud-stats">
+          <div className="flex-gap flex-item-center">
+            <div
+              className="player-list-item-content avatar-large"
+              style={{ '--player-color': currentPlayer.color } as React.CSSProperties}
+            />
             <div>
-              <h3 style={{ margin: 0, fontSize: '16px' }}>{currentPlayer.name}</h3>
-              <span style={{ fontSize: '12px', opacity: 0.7 }}>{ability.icon} {ability.name}</span>
-            </div>
-          </div>
-          
-          {/* Health Bar */}
-          <div style={{ marginBottom: '8px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '2px' }}>
-              <span>❤️ Health</span>
-              <span>{currentPlayer.health}/{currentPlayer.maxHealth}</span>
-            </div>
-            <div style={{ background: '#333', borderRadius: '4px', height: '8px', overflow: 'hidden' }}>
-              <div style={{ 
-                background: currentPlayer.health > 50 ? '#27ae60' : currentPlayer.health > 25 ? '#f39c12' : '#e74c3c',
-                height: '100%',
-                width: `${(currentPlayer.health / currentPlayer.maxHealth) * 100}%`,
-                transition: 'width 0.3s'
-              }} />
+              <h3 className="hud-panel-title">{currentPlayer.name}</h3>
+              <span className="text-small text-primary">{ability.icon} {ability.name}</span>
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '14px' }}>
-            <div>⚡ {currentPlayer.energy}</div>
-            <div>🎯 {currentPlayer.influence}</div>
-            <div>💀 {currentPlayer.kills}</div>
-            <div>☠️ {currentPlayer.deaths}</div>
+          {/* Health Bar */}
+          <div className="mb-4">
+            <div className="health-label">
+              <span>Shield Integrity</span>
+              <span>{Math.floor(currentPlayer.health)}/{currentPlayer.maxHealth}</span>
+            </div>
+            <div className="health-bar-container">
+              <div
+                className="health-bar-fill"
+                style={{
+                  '--health-percent': `${(currentPlayer.health / currentPlayer.maxHealth) * 100}%`,
+                  '--health-color': currentPlayer.health > 50 ? 'var(--success)' : currentPlayer.health > 25 ? 'var(--warning)' : 'var(--danger)'
+                } as React.CSSProperties}
+              />
+            </div>
           </div>
-          
-          <div style={{ marginTop: '10px', fontSize: '16px', fontWeight: 'bold' }}>
-            Score: {currentPlayer.score}
+
+          <div className="stats-grid">
+            <div className="stat-value">⚡ {Math.floor(currentPlayer.energy)}</div>
+            <div className="stat-value">🎯 {Math.floor(currentPlayer.influence)}</div>
+            <div className="stat-value">💀 {currentPlayer.kills}</div>
+            <div className="stat-value">☠️ {currentPlayer.deaths}</div>
+          </div>
+
+          <div className="score-display">
+            {Math.floor(currentPlayer.score)}
           </div>
 
           {currentPlayer.killStreak >= 3 && (
-            <div style={{ 
-              marginTop: '8px', 
-              background: 'rgba(231, 76, 60, 0.3)', 
-              padding: '5px 10px', 
-              borderRadius: '4px',
-              fontSize: '12px',
-              textAlign: 'center'
-            }}>
-              🔥 {currentPlayer.killStreak} Kill Streak!
+            <div className="kill-streak">
+              🔥 {currentPlayer.killStreak} KILL STREAK
             </div>
           )}
         </div>
 
         {/* Phase Indicator */}
-        <div className="phase-indicator" style={{
-          background: 'rgba(0, 0, 0, 0.8)',
-          borderRadius: '12px',
-          padding: '15px 25px',
-          textAlign: 'center',
-          borderBottom: `3px solid ${phaseInfo.color}`
-        }}>
-          <h3 style={{ margin: 0, color: phaseInfo.color }}>{phaseInfo.text}</h3>
-          <div style={{ opacity: 0.8, fontSize: '14px' }}>{phaseInfo.desc}</div>
+        <div className="phase-indicator" style={{ borderBottomColor: phaseInfo.color }}>
+          <h3 className="phase-title" style={{ color: phaseInfo.color, textShadow: `0 0 10px ${phaseInfo.color}` }}>{phaseInfo.text}</h3>
+          <div className="text-dim text-small phase-desc">{phaseInfo.desc}</div>
           {timeRemaining > 0 && (
-            <div style={{ 
-              fontSize: '28px', 
-              fontWeight: 'bold', 
-              marginTop: '5px',
-              fontFamily: 'monospace'
-            }}>
+            <div className={`phase-timer ${timeRemaining < 10000 ? 'timer-danger' : 'timer-normal'}`}>
               {formatTime(timeRemaining)}
             </div>
           )}
         </div>
 
         {/* Mini Player List */}
-        <div style={{
-          position: 'absolute',
-          top: '10px',
-          right: '10px',
-          background: 'rgba(0, 0, 0, 0.8)',
-          borderRadius: '8px',
-          padding: '10px',
-          maxWidth: '150px'
-        }}>
-          <div style={{ fontSize: '12px', opacity: 0.7, marginBottom: '5px' }}>
-            Players ({Object.keys(gameState.players).length})
+        <div className="hud-panel leaderboard border-bottom-none">
+          <div className="text-small text-dim leaderboard-header">
+            AGENTS ACTIVE ({Object.keys(gameState.players).length})
           </div>
           {Object.values(gameState.players)
             .sort((a, b) => b.score - a.score)
             .slice(0, 5)
             .map((player, idx) => (
-            <div key={player.id} style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '6px',
-              fontSize: '12px',
-              padding: '3px 0',
-              opacity: player.isAlive ? 1 : 0.5
-            }}>
-              <span>{idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : ''}</span>
-              <div style={{ 
-                width: '10px', 
-                height: '10px', 
-                backgroundColor: player.color,
-                borderRadius: '50%'
-              }} />
-              <span style={{ 
-                flex: 1, 
-                overflow: 'hidden', 
-                textOverflow: 'ellipsis',
-                fontWeight: player.id === currentPlayer.id ? 'bold' : 'normal'
-              }}>
-                {player.name}
-              </span>
-              <span style={{ opacity: 0.7 }}>{player.score}</span>
-            </div>
-          ))}
+              <div key={player.id} className={`player-list-item ${!player.isAlive ? 'player-dead' : ''}`}>
+                <span className="rank">{idx === 0 ? '1' : idx === 1 ? '2' : idx === 2 ? '3' : idx + 1}</span>
+                <div
+                  className="player-list-item-content player-avatar-small"
+                  style={{ '--player-color': player.color } as React.CSSProperties}
+                />
+                <span className={`name ${player.id === currentPlayer.id ? 'text-highlight' : ''}`}>
+                  {player.name}
+                </span>
+                <span className="score">{Math.floor(player.score)}</span>
+              </div>
+            ))}
         </div>
 
+<<<<<<< HEAD
         {/* Controls Help - Enhanced */}
         <div style={{
           position: 'absolute',
@@ -477,6 +432,21 @@ const Game = () => {
               fontWeight: 'bold'
             }}>
               ⏱️ {Math.ceil(abilityCooldown / 1000)}s cooldown
+=======
+        {/* Controls Help */}
+        <div className="hud-panel controls-hint">
+          <div className="controls-grid">
+            <div><kbd>WASD</kbd> MOVE</div>
+            <div><kbd>E</kbd> HARVEST</div>
+            <div><kbd>SPC</kbd> BEACON</div>
+            <div><kbd>Q</kbd> BOOST</div>
+            <div><kbd>L-CLK</kbd> FIRE</div>
+            <div><kbd>R</kbd> {ability.icon} ABILITY</div>
+          </div>
+          {abilityCooldown > 0 && (
+            <div className="ability-recharge">
+              ABILITY RECHARGING: {Math.ceil(abilityCooldown / 1000)}s
+>>>>>>> main
             </div>
           )}
         </div>
@@ -484,142 +454,92 @@ const Game = () => {
 
       {/* Game Over Modal */}
       {gameOverData && (
-        <div className="game-over-modal" style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0, 0, 0, 0.9)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 3000
-        }}>
-          <div style={{
-            background: 'linear-gradient(135deg, #1a1a2e, #16213e)',
-            padding: '30px 40px',
-            borderRadius: '16px',
-            maxWidth: '500px',
-            width: '90%',
-            maxHeight: '80vh',
-            overflow: 'auto',
-            border: '2px solid #3498db'
-          }}>
-            <h2 style={{ textAlign: 'center', marginBottom: '5px' }}>🎮 Game Over!</h2>
-            <p style={{ textAlign: 'center', opacity: 0.7, marginBottom: '20px' }}>
-              Duration: {formatDuration(gameOverData.matchDuration)}
+        <div className="game-over-modal">
+          <div className="modal-content">
+            <h2 className="lobby-title mission-complete-title">MISSION COMPLETE</h2>
+            <p className="text-center text-dim mb-4">
+              DURATION: {formatDuration(gameOverData.matchDuration)}
             </p>
-            
+
             {gameOverData.winner ? (
-              <div style={{ textAlign: 'center', marginBottom: '25px' }}>
-                <div style={{
-                  fontSize: '48px',
-                  marginBottom: '10px'
-                }}>🏆</div>
-                <h3 style={{ 
-                  color: gameOverData.winner.id === currentPlayer.id ? '#f1c40f' : '#fff',
-                  fontSize: '24px',
-                  margin: 0
+              <div className="winner-section">
+                <div className="winner-avatar" style={{
+                  backgroundColor: gameOverData.winner.color,
+                  boxShadow: `0 0 30px ${gameOverData.winner.color}`
                 }}>
-                  {gameOverData.winner.name} Wins!
+                  🏆
+                </div>
+                <h3 className={`winner-name status-text-bold ${gameOverData.winner.id === currentPlayer.id ? 'text-highlight' : ''}`} style={{ color: gameOverData.winner.id !== currentPlayer.id ? 'white' : undefined }}>
+                  {gameOverData.winner.name} WINS
                 </h3>
                 {gameOverData.winner.id === currentPlayer.id && (
-                  <p style={{ color: '#27ae60', marginTop: '5px' }}>🎉 Congratulations!</p>
+                  <p className="text-success victory-text">VICTORY ACHIEVED</p>
                 )}
               </div>
             ) : (
-              <h3 style={{ textAlign: 'center' }}>Draw!</h3>
+              <h3 className="stalemate-title">STALEMATE</h3>
             )}
 
-            <div style={{ marginBottom: '20px' }}>
-              <div style={{ 
-                display: 'flex', 
-                justifyContent: 'space-between',
-                padding: '8px 12px',
-                background: 'rgba(255,255,255,0.1)',
-                borderRadius: '8px 8px 0 0',
-                fontSize: '12px',
-                fontWeight: 'bold',
-                opacity: 0.7
-              }}>
-                <span style={{ width: '30px' }}>#</span>
-                <span style={{ flex: 1 }}>Player</span>
-                <span style={{ width: '60px', textAlign: 'right' }}>Score</span>
-                <span style={{ width: '50px', textAlign: 'right' }}>K/D</span>
+            <div className="mb-4">
+              <div className="flex-gap text-small text-dim scoreboard-header">
+                <span className="score-item-rank">#</span>
+                <span className="score-item-name">AGENT</span>
+                <span className="score-item-value">SCORE</span>
+                <span className="score-item-kd">K/D</span>
               </div>
-              {gameOverData.finalScores.map((score, index) => (
-                <div key={score.id} style={{ 
-                  display: 'flex',
-                  alignItems: 'center',
-                  padding: '10px 12px',
-                  background: score.id === currentPlayer.id ? 'rgba(52, 152, 219, 0.2)' : 'rgba(255,255,255,0.05)',
-                  borderBottom: '1px solid rgba(255,255,255,0.1)'
-                }}>
-                  <span style={{ width: '30px', fontSize: '16px' }}>
-                    {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`}
-                  </span>
-                  <span style={{ flex: 1, fontWeight: score.id === currentPlayer.id ? 'bold' : 'normal' }}>
-                    {score.name}
-                  </span>
-                  <span style={{ width: '60px', textAlign: 'right', fontWeight: 'bold' }}>{score.score}</span>
-                  <span style={{ width: '50px', textAlign: 'right', opacity: 0.7 }}>
-                    {score.kills}/{score.deaths}
-                  </span>
-                </div>
-              ))}
+              <div className="game-list scoreboard-list">
+                {gameOverData.finalScores.map((score, index) => (
+                  <div key={score.id} className={`room-list-item ${score.id === currentPlayer.id ? 'score-item-active' : ''}`}>
+                    <span className="score-item-rank">
+                      {index + 1}
+                    </span>
+                    <span className={`score-item-name ${score.id === currentPlayer.id ? 'text-highlight' : ''}`}>
+                      {score.name}
+                    </span>
+                    <span className="score-item-value">{Math.floor(score.score)}</span>
+                    <span className="score-item-kd">
+                      {score.kills}/{score.deaths}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
 
             {/* Detailed Stats Toggle */}
-            <button 
+            <button
               onClick={() => setShowStats(!showStats)}
-              style={{ 
-                background: 'transparent', 
-                border: 'none', 
-                color: '#3498db', 
-                cursor: 'pointer',
-                marginBottom: '15px',
-                width: '100%'
-              }}
+              className="stats-toggle-btn"
             >
-              {showStats ? '▼ Hide Details' : '▶ Show Detailed Stats'}
+              {showStats ? '▼ HIDE BATTLE DATA' : '▶ ACCESS BATTLE DATA'}
             </button>
 
             {showStats && (
-              <div style={{ 
-                background: 'rgba(0,0,0,0.3)', 
-                padding: '15px', 
-                borderRadius: '8px',
-                marginBottom: '20px',
-                fontSize: '13px'
-              }}>
+              <div className="detailed-stats-panel">
                 {gameOverData.finalScores.slice(0, 5).map(score => (
-                  <div key={score.id} style={{ marginBottom: '12px', paddingBottom: '12px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-                    <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>{score.name}</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '5px', opacity: 0.8 }}>
-                      <div>🎯 Influence: {score.influence}</div>
-                      <div>⚔️ Damage: {score.damageDealt}</div>
-                      <div>🏰 Nexuses: {score.nexusesCaptured}</div>
+                  <div key={score.id} className="stat-row">
+                    <div className={`stat-row-name ${score.id === currentPlayer.id ? 'text-highlight' : ''}`}>{score.name}</div>
+                    <div className="stat-row-details">
+                      <div>🎯 INF: {Math.floor(score.influence)}</div>
+                      <div>⚔️ DMG: {Math.floor(score.damageDealt)}</div>
+                      <div>🏰 CAP: {score.nexusesCaptured}</div>
                     </div>
                   </div>
                 ))}
               </div>
             )}
 
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button 
-                className="btn"
+            <div className="flex-gap">
+              <button
+                className="btn btn-primary action-buttons"
                 onClick={handlePlayAgain}
-                style={{ flex: 1, background: 'linear-gradient(135deg, #27ae60, #2ecc71)' }}
               >
-                🔄 Play Again
+                REDEPLOY
               </button>
-              <button 
-                className="btn btn-secondary" 
+              <button
+                className="btn btn-secondary action-buttons"
                 onClick={handleReturnToLobby}
-                style={{ flex: 1 }}
               >
-                🏠 Lobby
+                RTB (LOBBY)
               </button>
             </div>
           </div>

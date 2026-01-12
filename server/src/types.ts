@@ -1,5 +1,6 @@
 export interface Player {
   id: string;
+  userId: string; // Persistent ID for reconnection
   name: string;
   x: number;
   y: number;
@@ -11,6 +12,8 @@ export interface Player {
   influence: number;
   color: string;
   isAlive: boolean;
+  isConnected: boolean; // Track connection status
+  isReady: boolean; // Track if player is ready
   lastAction: number;
   // Combat properties
   health: number;
@@ -116,9 +119,16 @@ export interface PlayerAction {
 }
 
 export interface GameEvent {
+<<<<<<< HEAD
   type: 'player-joined' | 'player-left' | 'nexus-captured' | 'energy-pulse' | 'game-started' | 'game-ended' | 
         'player-attacked' | 'player-killed' | 'powerup-spawned' | 'powerup-collected' | 'achievement-unlocked' |
         'beacon-deployed' | 'attack-blocked' | 'player-respawned' | 'ability-used' | 'phase-changed' | 'critical-hit';
+=======
+  type: 'player-joined' | 'player-left' | 'player-reconnected' | 'nexus-captured' | 'energy-pulse' | 'game-started' | 'game-ended' |
+  'player-attacked' | 'player-killed' | 'powerup-spawned' | 'powerup-collected' | 'achievement-unlocked' |
+  'beacon-deployed' | 'attack-blocked' | 'player-respawned' | 'ability-used' | 'phase-changed' |
+  'timer-started' | 'timer-cancelled' | 'player-ready';
+>>>>>>> main
   data: any;
   timestamp: number;
 }

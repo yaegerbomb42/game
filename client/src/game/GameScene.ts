@@ -593,6 +593,16 @@ export class GameScene extends Phaser.Scene {
     })
   }
 
+  private getAbilityIcon(type: string): string {
+    switch (type) {
+      case 'dash': return '⚡'
+      case 'heal': return '💚'
+      case 'shield': return '🛡️'
+      case 'scan': return '👁️'
+      default: return '❓'
+    }
+  }
+
   private createPlayerSprite(player: Player): Phaser.GameObjects.Container {
     const container = this.add.container(player.x, player.y)
     
@@ -604,6 +614,11 @@ export class GameScene extends Phaser.Scene {
     const body = this.add.circle(0, 0, 12, color)
     body.setStrokeStyle(2, 0xffffff)
     
+    // Ability Icon (Class Indicator)
+    const abilityIcon = this.add.text(0, 0, this.getAbilityIcon(player.abilityType), {
+      fontSize: '12px'
+    }).setOrigin(0.5)
+
     // Direction indicator
     const direction = this.add.triangle(15, 0, 0, -5, 0, 5, 8, 0, color)
     direction.setAlpha(0.8)
@@ -635,8 +650,9 @@ export class GameScene extends Phaser.Scene {
     invincibleRing.setStrokeStyle(3, 0xffffff, 0.5)
     invincibleRing.setVisible(false)
     
-    container.add([shadow, body, direction, healthBg, healthFill, nameText, killStreakBadge, invincibleRing])
+    container.add([shadow, body, abilityIcon, direction, healthBg, healthFill, nameText, killStreakBadge, invincibleRing])
     container.setData('body', body)
+    container.setData('abilityIcon', abilityIcon)
     container.setData('direction', direction)
     container.setData('healthFill', healthFill)
     container.setData('nameText', nameText)
@@ -647,6 +663,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updatePlayerSprite(container: Phaser.GameObjects.Container, player: Player) {
+<<<<<<< HEAD
     // Smooth position interpolation with better performance
     const lerpFactor = 0.35 // Slightly faster for better responsiveness
     const distance = Phaser.Math.Distance.Between(container.x, container.y, player.x, player.y)
@@ -655,6 +672,25 @@ export class GameScene extends Phaser.Scene {
     const adaptiveLerp = distance > 50 ? lerpFactor * 1.5 : lerpFactor
     container.x = Phaser.Math.Linear(container.x, player.x, adaptiveLerp)
     container.y = Phaser.Math.Linear(container.y, player.y, adaptiveLerp)
+=======
+    const direction = container.getData('direction') as Phaser.GameObjects.Triangle
+
+    // Calculate angle for rotation based on movement
+    const dx = player.x - container.x
+    const dy = player.y - container.y
+    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+      const angle = Math.atan2(dy, dx)
+      direction.setRotation(angle)
+      
+      // Position direction indicator relative to body based on angle
+      direction.setPosition(Math.cos(angle) * 15, Math.sin(angle) * 15)
+    }
+
+    // Smooth position interpolation
+    const lerpFactor = 0.3
+    container.x = Phaser.Math.Linear(container.x, player.x, lerpFactor)
+    container.y = Phaser.Math.Linear(container.y, player.y, lerpFactor)
+>>>>>>> main
     
     const healthFill = container.getData('healthFill') as Phaser.GameObjects.Rectangle
     const killStreakBadge = container.getData('killStreakBadge') as Phaser.GameObjects.Text
