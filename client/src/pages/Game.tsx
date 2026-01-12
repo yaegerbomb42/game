@@ -344,95 +344,6 @@ const Game = () => {
             ))}
         </div>
 
-<<<<<<< HEAD
-        {/* Controls Help - Enhanced */}
-        <div style={{
-          position: 'absolute',
-          bottom: '10px',
-          right: '10px',
-          background: 'linear-gradient(135deg, rgba(0, 0, 0, 0.9), rgba(26, 26, 46, 0.9))',
-          padding: '14px',
-          borderRadius: '10px',
-          fontSize: '11px',
-          border: '1px solid rgba(255, 255, 255, 0.1)',
-          boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)'
-        }}>
-          <div style={{ 
-            fontWeight: 'bold', 
-            marginBottom: '8px', 
-            fontSize: '12px',
-            color: '#3498db'
-          }}>
-            Controls
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 15px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <kbd style={{ 
-                background: 'rgba(255,255,255,0.2)', 
-                padding: '2px 6px', 
-                borderRadius: '4px',
-                fontFamily: 'monospace'
-              }}>WASD</kbd>
-              <span>Move</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <kbd style={{ 
-                background: 'rgba(255,255,255,0.2)', 
-                padding: '2px 6px', 
-                borderRadius: '4px',
-                fontFamily: 'monospace'
-              }}>E</kbd>
-              <span>Harvest</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <kbd style={{ 
-                background: 'rgba(255,255,255,0.2)', 
-                padding: '2px 6px', 
-                borderRadius: '4px',
-                fontFamily: 'monospace'
-              }}>Space</kbd>
-              <span>Beacon</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <kbd style={{ 
-                background: 'rgba(255,255,255,0.2)', 
-                padding: '2px 6px', 
-                borderRadius: '4px',
-                fontFamily: 'monospace'
-              }}>Q</kbd>
-              <span>Boost</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <kbd style={{ 
-                background: 'rgba(255,255,255,0.2)', 
-                padding: '2px 6px', 
-                borderRadius: '4px',
-                fontFamily: 'monospace'
-              }}>Click</kbd>
-              <span>Attack</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <kbd style={{ 
-                background: abilityCooldown > 0 ? 'rgba(255,0,0,0.3)' : 'rgba(255,255,255,0.2)', 
-                padding: '2px 6px', 
-                borderRadius: '4px',
-                fontFamily: 'monospace'
-              }}>R</kbd>
-              <span>{ability.icon} Ability</span>
-            </div>
-          </div>
-          {abilityCooldown > 0 && (
-            <div style={{ 
-              marginTop: '10px', 
-              padding: '6px',
-              background: 'rgba(231, 76, 60, 0.2)',
-              borderRadius: '4px',
-              textAlign: 'center',
-              fontSize: '10px',
-              fontWeight: 'bold'
-            }}>
-              ⏱️ {Math.ceil(abilityCooldown / 1000)}s cooldown
-=======
         {/* Controls Help */}
         <div className="hud-panel controls-hint">
           <div className="controls-grid">
@@ -446,106 +357,107 @@ const Game = () => {
           {abilityCooldown > 0 && (
             <div className="ability-recharge">
               ABILITY RECHARGING: {Math.ceil(abilityCooldown / 1000)}s
->>>>>>> main
             </div>
           )}
         </div>
       </div>
 
       {/* Game Over Modal */}
-      {gameOverData && (
-        <div className="game-over-modal">
-          <div className="modal-content">
-            <h2 className="lobby-title mission-complete-title">MISSION COMPLETE</h2>
-            <p className="text-center text-dim mb-4">
-              DURATION: {formatDuration(gameOverData.matchDuration)}
-            </p>
+      {
+        gameOverData && (
+          <div className="game-over-modal">
+            <div className="modal-content">
+              <h2 className="lobby-title mission-complete-title">MISSION COMPLETE</h2>
+              <p className="text-center text-dim mb-4">
+                DURATION: {formatDuration(gameOverData.matchDuration)}
+              </p>
 
-            {gameOverData.winner ? (
-              <div className="winner-section">
-                <div className="winner-avatar" style={{
-                  backgroundColor: gameOverData.winner.color,
-                  boxShadow: `0 0 30px ${gameOverData.winner.color}`
-                }}>
-                  🏆
+              {gameOverData.winner ? (
+                <div className="winner-section">
+                  <div className="winner-avatar" style={{
+                    backgroundColor: gameOverData.winner.color,
+                    boxShadow: `0 0 30px ${gameOverData.winner.color}`
+                  }}>
+                    🏆
+                  </div>
+                  <h3 className={`winner-name status-text-bold ${gameOverData.winner.id === currentPlayer.id ? 'text-highlight' : ''}`} style={{ color: gameOverData.winner.id !== currentPlayer.id ? 'white' : undefined }}>
+                    {gameOverData.winner.name} WINS
+                  </h3>
+                  {gameOverData.winner.id === currentPlayer.id && (
+                    <p className="text-success victory-text">VICTORY ACHIEVED</p>
+                  )}
                 </div>
-                <h3 className={`winner-name status-text-bold ${gameOverData.winner.id === currentPlayer.id ? 'text-highlight' : ''}`} style={{ color: gameOverData.winner.id !== currentPlayer.id ? 'white' : undefined }}>
-                  {gameOverData.winner.name} WINS
-                </h3>
-                {gameOverData.winner.id === currentPlayer.id && (
-                  <p className="text-success victory-text">VICTORY ACHIEVED</p>
-                )}
-              </div>
-            ) : (
-              <h3 className="stalemate-title">STALEMATE</h3>
-            )}
+              ) : (
+                <h3 className="stalemate-title">STALEMATE</h3>
+              )}
 
-            <div className="mb-4">
-              <div className="flex-gap text-small text-dim scoreboard-header">
-                <span className="score-item-rank">#</span>
-                <span className="score-item-name">AGENT</span>
-                <span className="score-item-value">SCORE</span>
-                <span className="score-item-kd">K/D</span>
-              </div>
-              <div className="game-list scoreboard-list">
-                {gameOverData.finalScores.map((score, index) => (
-                  <div key={score.id} className={`room-list-item ${score.id === currentPlayer.id ? 'score-item-active' : ''}`}>
-                    <span className="score-item-rank">
-                      {index + 1}
-                    </span>
-                    <span className={`score-item-name ${score.id === currentPlayer.id ? 'text-highlight' : ''}`}>
-                      {score.name}
-                    </span>
-                    <span className="score-item-value">{Math.floor(score.score)}</span>
-                    <span className="score-item-kd">
-                      {score.kills}/{score.deaths}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Detailed Stats Toggle */}
-            <button
-              onClick={() => setShowStats(!showStats)}
-              className="stats-toggle-btn"
-            >
-              {showStats ? '▼ HIDE BATTLE DATA' : '▶ ACCESS BATTLE DATA'}
-            </button>
-
-            {showStats && (
-              <div className="detailed-stats-panel">
-                {gameOverData.finalScores.slice(0, 5).map(score => (
-                  <div key={score.id} className="stat-row">
-                    <div className={`stat-row-name ${score.id === currentPlayer.id ? 'text-highlight' : ''}`}>{score.name}</div>
-                    <div className="stat-row-details">
-                      <div>🎯 INF: {Math.floor(score.influence)}</div>
-                      <div>⚔️ DMG: {Math.floor(score.damageDealt)}</div>
-                      <div>🏰 CAP: {score.nexusesCaptured}</div>
+              <div className="mb-4">
+                <div className="flex-gap text-small text-dim scoreboard-header">
+                  <span className="score-item-rank">#</span>
+                  <span className="score-item-name">AGENT</span>
+                  <span className="score-item-value">SCORE</span>
+                  <span className="score-item-kd">K/D</span>
+                </div>
+                <div className="game-list scoreboard-list">
+                  {gameOverData.finalScores.map((score, index) => (
+                    <div key={score.id} className={`room-list-item ${score.id === currentPlayer.id ? 'score-item-active' : ''}`}>
+                      <span className="score-item-rank">
+                        {index + 1}
+                      </span>
+                      <span className={`score-item-name ${score.id === currentPlayer.id ? 'text-highlight' : ''}`}>
+                        {score.name}
+                      </span>
+                      <span className="score-item-value">{Math.floor(score.score)}</span>
+                      <span className="score-item-kd">
+                        {score.kills}/{score.deaths}
+                      </span>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            )}
 
-            <div className="flex-gap">
+              {/* Detailed Stats Toggle */}
               <button
-                className="btn btn-primary action-buttons"
-                onClick={handlePlayAgain}
+                onClick={() => setShowStats(!showStats)}
+                className="stats-toggle-btn"
               >
-                REDEPLOY
+                {showStats ? '▼ HIDE BATTLE DATA' : '▶ ACCESS BATTLE DATA'}
               </button>
-              <button
-                className="btn btn-secondary action-buttons"
-                onClick={handleReturnToLobby}
-              >
-                RTB (LOBBY)
-              </button>
+
+              {showStats && (
+                <div className="detailed-stats-panel">
+                  {gameOverData.finalScores.slice(0, 5).map(score => (
+                    <div key={score.id} className="stat-row">
+                      <div className={`stat-row-name ${score.id === currentPlayer.id ? 'text-highlight' : ''}`}>{score.name}</div>
+                      <div className="stat-row-details">
+                        <div>🎯 INF: {Math.floor(score.influence)}</div>
+                        <div>⚔️ DMG: {Math.floor(score.damageDealt)}</div>
+                        <div>🏰 CAP: {score.nexusesCaptured}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex-gap">
+                <button
+                  className="btn btn-primary action-buttons"
+                  onClick={handlePlayAgain}
+                >
+                  REDEPLOY
+                </button>
+                <button
+                  className="btn btn-secondary action-buttons"
+                  onClick={handleReturnToLobby}
+                >
+                  RTB (LOBBY)
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )
+      }
+    </div >
   )
 }
 

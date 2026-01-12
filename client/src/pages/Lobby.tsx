@@ -1,8 +1,4 @@
-<<<<<<< HEAD
 import { useState, useEffect, useCallback, useRef } from 'react'
-=======
-import { useState, useEffect, useRef } from 'react'
->>>>>>> main
 import { useNavigate } from 'react-router-dom'
 import { io, Socket } from 'socket.io-client'
 
@@ -77,14 +73,8 @@ const Lobby = () => {
   }, [])
 
   useEffect(() => {
-    const newSocket = io(import.meta.env.VITE_SERVER_URL || 'http://localhost:3001', {
-      reconnection: true,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
-      reconnectionAttempts: 5,
-      transports: ['websocket', 'polling'],
     setConnectionStatus('connecting')
-    
+
     const newSocket = io(SERVER_URL, {
       transports: ['websocket', 'polling'],
       timeout: 10000,
@@ -96,15 +86,12 @@ const Lobby = () => {
     setSocket(newSocket)
 
     newSocket.on('connect', () => {
-<<<<<<< HEAD
       console.log('Connected to server')
       setConnectionStatus('connected')
       setError('')
       reconnectAttempts.current = 0
-=======
->>>>>>> main
       fetchAvailableRooms()
-      
+
       // Try to reconnect to previous room if exists
       const previousRoomId = sessionStorage.getItem('currentRoomId')
       const previousPlayerId = sessionStorage.getItem('currentPlayerId')
@@ -130,12 +117,10 @@ const Lobby = () => {
         gamePhase: data.gameState.gamePhase
       })
       setIsConnecting(false)
-<<<<<<< HEAD
-      
+
       // Store for reconnection
       sessionStorage.setItem('currentRoomId', data.roomId)
       sessionStorage.setItem('currentPlayerId', data.player.id)
-=======
 
       // Navigate immediately if game is already started
       if (data.gameState.gamePhase !== 'waiting') {
@@ -143,7 +128,6 @@ const Lobby = () => {
           state: { socket: newSocket, playerName: localStorage.getItem('playerName') },
         })
       }
->>>>>>> main
     })
 
     newSocket.on('room-full', () => {
@@ -251,19 +235,18 @@ const Lobby = () => {
       setIsConnecting(false)
     })
 
-<<<<<<< HEAD
     newSocket.on('reconnect', (attemptNumber) => {
       console.log('Reconnected after', attemptNumber, 'attempts')
       setConnectionStatus('connected')
       setError('')
-=======
+    })
+
     newSocket.on('connect_error', (err: any) => {
       const serverUrl = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001'
       const message =
         typeof err?.message === 'string' && err.message.length > 0 ? ` (${err.message})` : ''
       setError(`Failed to connect to server: ${serverUrl}${message}`)
       setIsConnecting(false)
->>>>>>> main
     })
 
     // Fetch available rooms periodically
@@ -350,59 +333,51 @@ const Lobby = () => {
     setIsConnecting(true)
     setError('')
     localStorage.setItem('playerName', playerName.trim())
-<<<<<<< HEAD
-    
+
     try {
       // Use the quickjoin API endpoint for best room selection
       const response = await fetch(`${SERVER_URL}/quickjoin`)
       const data = await response.json()
-      
+
       if (data.roomId) {
-        socket?.emit('join-room', { 
-          roomId: data.roomId, 
-          playerName: playerName.trim() 
+        socket?.emit('join-room', {
+          roomId: data.roomId,
+          playerName: playerName.trim(),
+          abilityType: selectedAbility,
+          userId: getUserId()
         })
       } else {
         // Fallback to socket-based quick match
-        socket?.emit('quick-match', { playerName: playerName.trim() })
+        socket?.emit('join-room', {
+          playerName: playerName.trim(),
+          abilityType: selectedAbility,
+          userId: getUserId()
+        })
       }
     } catch (e) {
       // Fallback: check available rooms or create new
       if (availableRooms.length > 0) {
         const bestRoom = availableRooms.find(r => r.playerCount < 6 && r.canJoin !== false) || availableRooms[0]
-        socket?.emit('join-room', { 
-          roomId: bestRoom.roomId, 
-          playerName: playerName.trim() 
+        socket?.emit('join-room', {
+          roomId: bestRoom.roomId,
+          playerName: playerName.trim(),
+          abilityType: selectedAbility,
+          userId: getUserId()
         })
       } else {
         // Create new room
-        socket?.emit('join-room', { playerName: playerName.trim() })
+        socket?.emit('join-room', {
+          playerName: playerName.trim(),
+          abilityType: selectedAbility,
+          userId: getUserId()
+        })
       }
-=======
-
-    // Check for available rooms first
-    if (availableRooms.length > 0) {
-      const bestRoom = availableRooms.find(r => r.playerCount < 6) || availableRooms[0]
-      socket?.emit('join-room', {
-        roomId: bestRoom.roomId,
-        playerName: playerName.trim(),
-        abilityType: selectedAbility,
-        userId: getUserId()
-      })
-    } else {
-      // Create new room
-      socket?.emit('join-room', {
-        playerName: playerName.trim(),
-        abilityType: selectedAbility,
-        userId: getUserId()
-      })
     }
   }
 
   const handleToggleReady = () => {
     if (roomState && socket) {
       socket.emit('toggle-ready', roomState.roomId);
->>>>>>> main
     }
   }
 
@@ -513,49 +488,6 @@ const Lobby = () => {
 
   return (
     <div className="lobby-container">
-<<<<<<< HEAD
-      <div className="lobby-card" style={{ maxWidth: '600px' }}>
-        <h1 style={{ fontSize: '2.5rem', marginBottom: '5px' }}>🎮 Nexus Wars</h1>
-        <p style={{ opacity: 0.8, marginBottom: '10px' }}>Fast-paced 2D multiplayer strategy</p>
-        
-        {/* Connection Status */}
-        <div style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: 'center',
-          gap: '8px',
-          marginBottom: '15px',
-          fontSize: '13px'
-        }}>
-          <div style={{
-            width: '10px',
-            height: '10px',
-            borderRadius: '50%',
-            background: connectionStatus === 'connected' ? '#27ae60' : 
-                       connectionStatus === 'connecting' ? '#f39c12' : '#e74c3c',
-            boxShadow: connectionStatus === 'connected' ? '0 0 10px #27ae60' : 'none'
-          }} />
-          <span style={{ opacity: 0.7 }}>
-            {connectionStatus === 'connected' ? 'Connected' : 
-             connectionStatus === 'connecting' ? 'Connecting...' : 'Disconnected'}
-          </span>
-          {serverStats && connectionStatus === 'connected' && (
-            <span style={{ opacity: 0.5, marginLeft: '10px' }}>
-              • {serverStats.totalPlayers} players online • {serverStats.rooms} rooms
-            </span>
-          )}
-        </div>
-
-        {error && (
-          <div style={{ 
-            background: error.includes('Connecting') ? 'rgba(243, 156, 18, 0.2)' : 'rgba(231, 76, 60, 0.2)', 
-            padding: '12px', 
-            borderRadius: '8px', 
-            marginBottom: '15px',
-            border: `1px solid ${error.includes('Connecting') ? 'rgba(243, 156, 18, 0.5)' : 'rgba(231, 76, 60, 0.5)'}`
-          }}>
-            {error.includes('Connecting') ? '🔄' : '⚠️'} {error}
-=======
       <div className="lobby-card">
         <h1 className="lobby-title">NEXUS WARS</h1>
         <p className="text-dim game-title-subtitle">Tactical Multiplayer Strategy</p>
@@ -563,9 +495,14 @@ const Lobby = () => {
         {error && (
           <div className="error-message">
             ⚠️ {error}
->>>>>>> main
           </div>
         )}
+
+        {/* Connection Status Indicator - Integrated into the clean UI */}
+        <div className="connection-status-pill mb-4" style={{ textAlign: 'center', fontSize: '0.8rem', opacity: 0.7 }}>
+          Status: {connectionStatus === 'connected' ? '🟢 Online' : connectionStatus === 'connecting' ? '🟠 Connecting...' : '🔴 Offline'}
+          {serverStats && ` • ${serverStats.totalPlayers} Players`}
+        </div>
 
         <div className="input-group">
           <label className="input-label" htmlFor="playerName">AGENT IDENTITY</label>
@@ -604,37 +541,17 @@ const Lobby = () => {
         <button
           className="btn btn-primary mb-4"
           onClick={handleQuickMatch}
-<<<<<<< HEAD
-          disabled={isConnecting || !playerName.trim() || connectionStatus !== 'connected'}
-          style={{ 
-            fontSize: '18px', 
-            padding: '15px 30px',
-            background: connectionStatus === 'connected' 
-              ? 'linear-gradient(135deg, #27ae60, #2ecc71)'
-              : 'linear-gradient(135deg, #7f8c8d, #95a5a6)',
-            marginBottom: '10px',
-            width: '100%'
-          }}
-        >
-          {isConnecting ? '🔄 Finding match...' : 
-           connectionStatus !== 'connected' ? '⏳ Connecting...' : '⚡ Quick Match'}
-=======
           disabled={isConnecting || !playerName.trim()}
         >
           {isConnecting ? 'INITIALIZING LINK...' : '⚡ QUICK DEPLOY'}
->>>>>>> main
         </button>
 
         <div className="flex-gap mb-4">
           <button
             className="btn btn-secondary"
             onClick={handleCreateRoom}
-<<<<<<< HEAD
-            disabled={isConnecting || !playerName.trim() || connectionStatus !== 'connected'}
-            style={{ flex: 1 }}
-=======
             disabled={isConnecting || !playerName.trim()}
->>>>>>> main
+
           >
             CREATE PRIVATE SECTOR
           </button>
@@ -642,57 +559,6 @@ const Lobby = () => {
 
         {/* Available Rooms */}
         {availableRooms.length > 0 && (
-<<<<<<< HEAD
-          <div style={{ marginBottom: '20px' }}>
-            <h4 style={{ marginBottom: '10px' }}>🌐 Active Games</h4>
-            <div style={{ display: 'grid', gap: '8px' }}>
-              {availableRooms.slice(0, 5).map(room => {
-                const phaseColors: Record<string, string> = {
-                  waiting: '#27ae60',
-                  spawn: '#3498db',
-                  expansion: '#9b59b6',
-                  conflict: '#e74c3c',
-                  pulse: '#f39c12',
-                }
-                const phaseColor = phaseColors[room.gamePhase || 'waiting'] || '#95a5a6'
-                
-                return (
-                  <div key={room.roomId} style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    background: 'rgba(255,255,255,0.1)',
-                    padding: '10px 15px',
-                    borderRadius: '8px',
-                    borderLeft: `3px solid ${phaseColor}`
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <span style={{ fontWeight: 'bold' }}>{room.roomId}</span>
-                      {room.gamePhase && (
-                        <span style={{ 
-                          fontSize: '11px', 
-                          padding: '2px 6px', 
-                          background: `${phaseColor}33`,
-                          borderRadius: '4px',
-                          color: phaseColor
-                        }}>
-                          {room.gamePhase === 'waiting' ? '⏳ Waiting' : `🎮 ${room.gamePhase}`}
-                        </span>
-                      )}
-                    </div>
-                    <span style={{ opacity: 0.7, fontSize: '14px' }}>{room.playerCount}/{room.maxPlayers}</span>
-                    <button 
-                      className="btn btn-secondary"
-                      onClick={() => handleJoinRoom(room.roomId)}
-                      disabled={isConnecting || connectionStatus !== 'connected' || room.canJoin === false}
-                      style={{ padding: '5px 15px', fontSize: '14px' }}
-                    >
-                      Join
-                    </button>
-                  </div>
-                )
-              })}
-=======
           <div className="mb-4">
             <h4 className="rooms-header text-dim text-small">ACTIVE SECTORS</h4>
             <div className="game-list">
@@ -709,7 +575,6 @@ const Lobby = () => {
                   </button>
                 </div>
               ))}
->>>>>>> main
             </div>
           </div>
         )}
@@ -728,12 +593,7 @@ const Lobby = () => {
             onChange={(e) => setRoomId(e.target.value.toUpperCase())}
             placeholder="ACCESS CODE"
             maxLength={6}
-<<<<<<< HEAD
-            disabled={isConnecting || connectionStatus !== 'connected'}
-            style={{ flex: 1, fontSize: '16px', padding: '12px', textAlign: 'center', letterSpacing: '2px' }}
-=======
             disabled={isConnecting}
->>>>>>> main
           />
           <button
             className="btn btn-secondary connect-btn"
