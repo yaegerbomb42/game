@@ -167,12 +167,32 @@ docker-compose up --build
 
 ### Hosting Architecture
 
+<<<<<<< HEAD
 ```
 ┌─────────────────┐     WebSocket     ┌─────────────────┐
 │  Vercel/Netlify │ ←───────────────→ │ Railway/Render  │
 │   (Frontend)    │                   │    (Backend)    │
 │  Static Files   │      HTTP/WS      │  Game Server    │
 └─────────────────┘                   └─────────────────┘
+```
+=======
+- **Frontend**: Vercel, Netlify, or any static hosting
+- **Backend**: Railway, Render, Fly.io, or any Node.js hosting (must support WebSockets)
+- **Database**: Redis (for session management in production)
+>>>>>>> main
+
+### Vercel Multiplayer Notes
+
+This game uses **Socket.IO (WebSockets)** for real-time multiplayer. The recommended setup is:
+
+- Deploy the **client** to Vercel.
+- Deploy the **server** to a WebSocket-capable host (Railway/Render/Fly/etc).
+- Set the Vercel project env var `VITE_SERVER_URL` to your server URL (example: `https://your-server.example.com`).
+
+On the server, you can optionally restrict which client origins are allowed by setting:
+
+```
+CLIENT_ORIGINS=https://your-vercel-app.vercel.app,https://your-custom-domain.com
 ```
 
 ## 🎮 Game Mechanics

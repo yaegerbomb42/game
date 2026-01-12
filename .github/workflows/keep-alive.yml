@@ -1,0 +1,15 @@
+name: Keep-Alive Render
+
+on:
+  schedule:
+    - cron: '*/14 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Render App
+        run: |
+          curl -I https://nexuswars.onrender.com
+          curl -I https://nexus-wars-server.onrender.com

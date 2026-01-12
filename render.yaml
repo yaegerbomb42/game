@@ -1,0 +1,25 @@
+services:
+  # Backend Server (Socket.io)
+  - type: web
+    name: nexus-wars-server
+    env: node
+    plan: free
+    buildCommand: npm install && npm run build:server
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+
+  # Frontend Client (Static Site)
+  - type: static
+    name: nexus-wars-client
+    env: static
+    plan: free
+    buildCommand: npm install && npm run build:client
+    staticPublishPath: client/dist
+    envVars:
+      - key: VITE_SERVER_URL
+        # The user will need to update this to the actual server URL after deployment
+        value: https://nexus-wars-server.onrender.com
