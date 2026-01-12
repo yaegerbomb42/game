@@ -55,6 +55,15 @@ interface GameState {
 }
 
 export class GameScene extends Phaser.Scene {
+  // Constants
+  private static readonly BOUNDARY_PADDING = 20
+  private static readonly MAP_WIDTH = 780
+  private static readonly MAP_HEIGHT = 580
+  private static readonly INTERPOLATION_SPEED = 0.015
+  private static readonly POWERUP_COLLECTION_RADIUS = 35
+  private static readonly COLOR_CONTESTED = '#ff6b6b'
+  private static readonly COLOR_SUCCESS = '#ffd700'
+  
   private socket!: Socket
   private currentPlayer!: Player
   private gameState!: GameState
@@ -138,7 +147,7 @@ export class GameScene extends Phaser.Scene {
     // Phase indicator
     this.phaseText = this.add.text(400, 10, '', {
       fontSize: '16px',
-      color: '#ffd700',
+      color: GameScene.COLOR_SUCCESS,
       backgroundColor: 'rgba(0,0,0,0.8)',
       padding: { x: 15, y: 8 }
     }).setScrollFactor(0).setDepth(1000).setOrigin(0.5, 0)
@@ -193,7 +202,11 @@ export class GameScene extends Phaser.Scene {
     // Apply movement with throttling
     if (velocityX !== 0 || velocityY !== 0) {
       const now = Date.now()
-      if (now - this.lastMoveTime < this.moveThrottle) return
+      if (now - this.lastMoveTime < this.moveThrottle) {
+        // Ensure any existing movement (e.g. mouse-driven) is cancelled even when throttled
+        this.isMoving = false
+        return
+      }
       this.lastMoveTime = now
       
       // Normalize diagonal movement
@@ -204,8 +217,8 @@ export class GameScene extends Phaser.Scene {
       }
       
       const dt = 1/60
-      const newX = Phaser.Math.Clamp(this.currentPlayer.x + velocityX * dt, 20, 780)
-      const newY = Phaser.Math.Clamp(this.currentPlayer.y + velocityY * dt, 20, 580)
+      const newX = Phaser.Math.Clamp(this.currentPlayer.x + velocityX * dt, GameScene.BOUNDARY_PADDING, GameScene.MAP_WIDTH)
+      const newY = Phaser.Math.Clamp(this.currentPlayer.y + velocityY * dt, GameScene.BOUNDARY_PADDING, GameScene.MAP_HEIGHT)
       
       // Optimistic update
       this.currentPlayer.x = newX
@@ -217,7 +230,7 @@ export class GameScene extends Phaser.Scene {
   }
   
   private interpolateOtherPlayers(delta: number) {
-    const lerpFactor = Math.min(1, delta * 0.015) // Smooth interpolation
+    const lerpFactor = Math.min(1, delta * GameScene.INTERPOLATION_SPEED) // Smooth interpolation
     
     this.playerSprites.forEach((sprite, playerId) => {
       if (playerId === this.currentPlayer?.id) return
@@ -250,7 +263,7 @@ export class GameScene extends Phaser.Scene {
         powerUp.x, powerUp.y
       )
       
-      if (distance < 35) {
+      if (distance < GameScene.POWERUP_COLLECTION_RADIUS) {
         this.sendPlayerAction('collect-powerup', { powerUpId: powerUp.id })
         break // Only collect one per frame
       }
@@ -326,8 +339,8 @@ export class GameScene extends Phaser.Scene {
     const speed = this.currentPlayer.speed || 150
     const dt = 1/60
     const moveDistance = Math.min(speed * dt, distance)
-    const newX = Phaser.Math.Clamp(this.currentPlayer.x + Math.cos(angle) * moveDistance, 20, 780)
-    const newY = Phaser.Math.Clamp(this.currentPlayer.y + Math.sin(angle) * moveDistance, 20, 580)
+    const newX = Phaser.Math.Clamp(this.currentPlayer.x + Math.cos(angle) * moveDistance, GameScene.BOUNDARY_PADDING, GameScene.MAP_WIDTH)
+    const newY = Phaser.Math.Clamp(this.currentPlayer.y + Math.sin(angle) * moveDistance, GameScene.BOUNDARY_PADDING, GameScene.MAP_HEIGHT)
 
     // Optimistic update
     this.currentPlayer.x = newX
@@ -515,7 +528,7 @@ export class GameScene extends Phaser.Scene {
     switch (event.type) {
       case 'nexus-captured':
         this.createCaptureEffect(event.data.nexusId)
-        this.showNotification(`${event.data.playerName} captured a nexus!`, event.data.contested ? '#ff6b6b' : '#ffd700')
+        this.showNotification(`${event.data.playerName} captured a nexus!`, event.data.contested ? GameScene.COLOR_CONTESTED : GameScene.COLOR_SUCCESS)
         break
       case 'energy-pulse':
         this.createPulseEffect()
@@ -536,7 +549,7 @@ export class GameScene extends Phaser.Scene {
         this.createBeaconEffect(event.data.x, event.data.y)
         break
       case 'phase-changed':
-        this.showNotification(`Phase: ${event.data.newPhase.toUpperCase()}`, '#ffd700')
+        this.showNotification(`Phase: ${event.data.newPhase.toUpperCase()}`, GameScene.COLOR_SUCCESS)
         break
     }
   }
