@@ -8,30 +8,6 @@ import { Player } from './types';
 
 const app = express();
 const server = createServer(app);
-<<<<<<< HEAD
-
-// Production CORS configuration - allow all origins for multiplayer
-const allowedOrigins = process.env.ALLOWED_ORIGINS 
-  ? process.env.ALLOWED_ORIGINS.split(',')
-  : ['http://localhost:3000', 'http://localhost:5173'];
-
-// In production, allow any origin (for Vercel deployments)
-const corsOptions = {
-  origin: process.env.NODE_ENV === 'production' ? true : allowedOrigins,
-  methods: ['GET', 'POST', 'OPTIONS'],
-  credentials: true,
-};
-
-const io = new Server(server, {
-  cors: corsOptions,
-  transports: ['websocket', 'polling'],
-  pingTimeout: 60000,
-  pingInterval: 25000,
-  allowEIO3: true,
-});
-
-app.use(cors(corsOptions));
-=======
 app.set('trust proxy', 1);
 
 /**
@@ -59,11 +35,7 @@ app.use(
     origin: allowAllOrigins ? true : clientOrigins,
   })
 );
->>>>>>> main
 app.use(express.json());
-
-// Handle preflight requests
-app.options('*', cors(corsOptions));
 
 // Store active game rooms
 const gameRooms = new Map<string, GameRoom>();
@@ -103,15 +75,15 @@ app.get('/rooms', (req, res) => {
 app.get('/quickjoin', (req, res) => {
   // Find best room: prefer waiting rooms with players, then in-progress rooms with space
   let bestRoom: { roomId: string; playerCount: number } | null = null;
-  
+
   for (const [roomId, room] of gameRooms) {
     if (room.isFull()) continue;
-    
+
     const phase = room.getGamePhase();
     if (phase === 'ended') continue;
-    
+
     const playerCount = room.getPlayerCount();
-    
+
     // Prefer waiting rooms with at least 1 player
     if (phase === 'waiting' && playerCount > 0) {
       if (!bestRoom || playerCount > bestRoom.playerCount) {
@@ -122,7 +94,7 @@ app.get('/quickjoin', (req, res) => {
       bestRoom = { roomId, playerCount };
     }
   }
-  
+
   if (bestRoom) {
     res.json({ roomId: bestRoom.roomId, isNew: false });
   } else {
@@ -398,25 +370,20 @@ io.on('connection', (socket) => {
     // Find best room: prefer waiting rooms with players
     let bestRoom: GameRoom | null = null;
     let bestRoomIdFound: string | null = null;
-<<<<<<< HEAD
     let bestScore = -1;
-    
-=======
-
->>>>>>> main
     for (const [rid, room] of gameRooms) {
       if (room.isFull()) continue;
-      
+
       const phase = room.getGamePhase();
       if (phase === 'ended') continue;
-      
+
       const playerCount = room.getPlayerCount();
-      
+
       // Score: waiting rooms with players get priority
       let score = playerCount;
       if (phase === 'waiting') score += 100;
       if (playerCount >= 1 && playerCount <= 5) score += 50;
-      
+
       if (score > bestScore) {
         bestScore = score;
         bestRoom = room;
@@ -534,7 +501,7 @@ setInterval(() => {
 server.listen(PORT, () => {
   console.log(`🚀 Nexus Wars server running on port ${PORT}`);
   console.log(`📡 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🌐 CORS enabled for: ${process.env.NODE_ENV === 'production' ? 'all origins' : allowedOrigins.join(', ')}`);
+  console.log(`🌐 CORS enabled for: ${allowAllOrigins ? 'all origins' : clientOrigins.join(', ')}`);
 });
 
 // Graceful shutdown

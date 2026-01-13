@@ -169,9 +169,20 @@ export class GameRoom extends EventEmitter {
   }
 
   public checkReadyStart() {
-    if (this.players.size < 2) return;
+    console.log(`[GameRoom] checkReadyStart: players=${this.players.size}, phase=${this.gamePhase}`);
+
+    if (this.gamePhase !== 'waiting') {
+      console.log('[GameRoom] Game already started, skipping ready check');
+      return;
+    }
+
+    if (this.players.size < 2) {
+      console.log('[GameRoom] Not enough players for ready start');
+      return;
+    }
 
     const allReady = Array.from(this.players.values()).every(p => p.isReady);
+    console.log(`[GameRoom] All ready check: ${allReady}`);
 
     if (allReady) {
       console.log('[GameRoom] All players ready! Starting immediately.');
@@ -290,7 +301,7 @@ export class GameRoom extends EventEmitter {
     const baseHarvestAmount = Math.min(15, nexus.energy);
     const ownershipBonus = nexus.controlledBy === player.id ? 5 : 0;
     const harvestAmount = baseHarvestAmount + ownershipBonus;
-    
+
     nexus.energy -= baseHarvestAmount;
     player.energy += harvestAmount;
 
@@ -449,18 +460,18 @@ export class GameRoom extends EventEmitter {
 
     // Calculate damage with combo bonus and distance scaling
     let damage = player.attackPower;
-    
+
     // Combo bonus: more damage with consecutive actions
     if (player.comboCount > 1) {
       damage += Math.min(player.comboCount * 3, 20);
     }
-    
+
     // Distance bonus: closer attacks deal more damage
     const distanceRatio = distance / player.attackRange;
     if (distanceRatio < 0.5) {
       damage = Math.floor(damage * 1.3); // 30% more damage at close range
     }
-    
+
     // Critical hit chance (10% for high combo)
     if (player.comboCount >= 3 && Math.random() < 0.1) {
       damage = Math.floor(damage * 1.5);
@@ -480,7 +491,7 @@ export class GameRoom extends EventEmitter {
     targetPlayer.health -= damage;
     player.damageDealt += damage;
     player.lastAttack = now;
-    
+
     // Better scoring for attacks
     const attackScore = Math.floor(damage / 2) + (player.comboCount > 1 ? player.comboCount * 2 : 0);
     player.score += attackScore;
@@ -764,7 +775,7 @@ export class GameRoom extends EventEmitter {
       this.updateNexuses();
       this.updatePowerUps();
       this.updatePlayerEffects();
-      
+
       // Only broadcast if there are changes or periodically
       this.broadcastGameState();
     }, 1000 / BROADCAST_RATE);
@@ -982,20 +993,19 @@ export class GameRoom extends EventEmitter {
   private spawnPowerUp() {
     if (this.powerUps.length >= 8) return; // Increased max power-ups
 
-<<<<<<< HEAD
     // Weighted power-up spawning for better balance
-    const powerUpWeights: Array<{type: PowerUp['type']; weight: number}> = [
+    const powerUpWeights: Array<{ type: PowerUp['type']; weight: number }> = [
       { type: 'speed', weight: 20 },
       { type: 'shield', weight: 25 },
       { type: 'damage', weight: 20 },
       { type: 'health', weight: 30 }, // Health more common
       { type: 'energy', weight: 25 },
     ];
-    
+
     const totalWeight = powerUpWeights.reduce((sum, item) => sum + item.weight, 0);
     let random = Math.random() * totalWeight;
     let type: PowerUp['type'] = 'health';
-    
+
     for (const item of powerUpWeights) {
       random -= item.weight;
       if (random <= 0) {
@@ -1003,12 +1013,6 @@ export class GameRoom extends EventEmitter {
         break;
       }
     }
-    
-=======
-    const powerUpTypes: PowerUp['type'][] = ['speed', 'shield', 'damage', 'health', 'energy'];
-    const type = powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)];
-
->>>>>>> main
     // Spawn away from players
     let bestX = Math.random() * (GAME_WIDTH - 100) + 50;
     let bestY = Math.random() * (GAME_HEIGHT - 100) + 50;
@@ -1204,6 +1208,7 @@ export class GameRoom extends EventEmitter {
       player.comboCount = 0;
       player.killStreak = 0;
       player.activePowerUps = [];
+      player.isReady = false; // Reset ready state for new match
     }
 
     // Reset nexuses
@@ -1212,8 +1217,12 @@ export class GameRoom extends EventEmitter {
     this.winner = null;
     this.gamePhase = 'waiting';
 
+    // Broadcast state update so clients see they're back in lobby
+    this.broadcastGameState();
+
+    // Don't auto-start - let players ready up again
     if (this.players.size >= 2) {
-      this.startGame();
+      this.startLobbyTimer();
     }
   }
 }
